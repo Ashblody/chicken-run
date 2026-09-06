@@ -10,7 +10,7 @@ import type { Chicken, Floater, GamePhase } from './types'
 const ROUND_SEC = 90
 const MAX_AMMO = 5
 const AUTO_RELOAD_MS = 900
-const HS_KEY = 'chikenrun-highscore'
+const HS_KEY = 'chickenrun-highscore'
 
 export class Game {
   private canvas: HTMLCanvasElement
@@ -56,7 +56,10 @@ export class Game {
     this.elStart = must('#start-btn') as HTMLButtonElement
     this.elReload = must('#reload-btn') as HTMLButtonElement
 
-    this.highScore = Number(localStorage.getItem(HS_KEY) || '0') || 0
+    this.highScore = Number(localStorage.getItem(HS_KEY) || localStorage.getItem('chikenrun-highscore') || '0') || 0
+    if (this.highScore > 0 && !localStorage.getItem(HS_KEY)) {
+      localStorage.setItem(HS_KEY, String(this.highScore))
+    }
     this.elHigh.textContent = String(this.highScore)
 
     this.bind()

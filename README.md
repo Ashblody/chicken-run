@@ -1,4 +1,4 @@
-# ChikenRun
+# ChickenRun
 
 Otroška brskalniška igra v slogu klasičnega Moorhuhna — lovi lude kokoši!
 
@@ -30,7 +30,7 @@ npm install
 npm run dev
 npm run build
 
-GitHub Pages: /chiken-run/
+GitHub Pages: /chicken-run/
 
 ## Licenca
 
