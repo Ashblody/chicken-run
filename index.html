@@ -14,14 +14,17 @@
       <div id="hud">
         <div id="timer">01 : 30</div>
         <div id="score">0</div>
+        <div id="challenge-progress" class="hidden">Klasično</div>
       </div>
       <div id="ammo"></div>
       <button id="reload-btn" type="button" hidden>Naloži</button>
+      <div id="toast" class="toast hidden" role="status"></div>
       <div id="overlay" class="overlay">
         <div class="panel">
           <h1>ChickenRun</h1>
           <p class="tagline">Lovi lude kokoši!</p>
-          <p id="overlay-msg">Klikni ali tapni, da ustreliš.</p>
+          <p id="overlay-msg">Izberi izziv in pritisni Začni!</p>
+          <div id="challenge-list" class="challenge-list" role="listbox" aria-label="Izzivi"></div>
           <p id="high-score-line">Najboljši rezultat: <strong id="high-score">0</strong></p>
           <button id="start-btn" type="button">Začni</button>
         </div>
