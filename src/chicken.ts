@@ -7,6 +7,42 @@ export const LAYERS: DepthLayer[] = [
   { scale: 1.35, speed: 170, points: 50, yMin: 0.52, yMax: 0.62, gold: true },
 ]
 
+const ART_BASE = `${import.meta.env.BASE_URL}art/sprites/`
+
+const SPRITE_FILES: Record<ChickenPalette, string> = {
+  white: 'chicken-white.webp',
+  brown: 'chicken-brown.webp',
+  ginger: 'chicken-brown.webp',
+  speckle: 'chicken-speckle.webp',
+  gold: 'chicken-gold.webp',
+}
+
+const spriteCache = new Map<string, HTMLImageElement>()
+const spriteReady = new Map<string, boolean>()
+
+function loadSprite(file: string): HTMLImageElement {
+  let img = spriteCache.get(file)
+  if (img) return img
+  img = new Image()
+  img.decoding = 'async'
+  img.onload = () => spriteReady.set(file, true)
+  img.onerror = () => spriteReady.set(file, false)
+  img.src = `${ART_BASE}${file}`
+  spriteCache.set(file, img)
+  spriteReady.set(file, false)
+  return img
+}
+
+function getSprite(palette: ChickenPalette): HTMLImageElement | null {
+  const file = SPRITE_FILES[palette]
+  const img = loadSprite(file)
+  if (spriteReady.get(file) && img.naturalWidth > 0) return img
+  return null
+}
+
+// Warm-load all variants early
+;(['white', 'brown', 'speckle', 'gold'] as const).forEach((p) => loadSprite(SPRITE_FILES[p]))
+
 const PALETTES: Record<
   ChickenPalette,
   { body: string; wing: string; belly: string; tail: string; head: string; accent: string }
@@ -137,7 +173,6 @@ export function isGoldChicken(c: Chicken): boolean {
 export function drawChicken(ctx: CanvasRenderingContext2D, c: Chicken): void {
   if (c.state === 'gone') return
   const s = c.layer.scale
-  const pal = PALETTES[c.palette]
   ctx.save()
   ctx.translate(c.x, c.y)
   ctx.scale(c.facing, 1)
@@ -170,6 +205,83 @@ export function drawChicken(ctx: CanvasRenderingContext2D, c: Chicken): void {
     ctx.fill()
   }
 
+  const sprite = getSprite(c.palette)
+  if (sprite) {
+    drawChickenSprite(ctx, c, sprite, s, bodyR, wingPhase)
+  } else {
+    drawChickenProcedural(ctx, c, s, bodyR, wingPhase)
+  }
+
+  // Tiny crown sparkles for gold
+  if (c.palette === 'gold' && c.state === 'flying') {
+    const sparkle = (Math.sin(c.flap * 0.7) + 1) * 0.5
+    ctx.fillStyle = `rgba(255,255,200,${0.5 + sparkle * 0.5})`
+    for (const [dx, dy] of [
+      [-bodyR * 0.2, -bodyR * 1.35],
+      [bodyR * 0.9, -bodyR * 1.1],
+      [bodyR * 0.1, -bodyR * 0.2],
+    ] as const) {
+      drawSpark(ctx, dx, dy, 3.5 * s * (0.7 + sparkle * 0.4))
+    }
+  }
+
+  ctx.restore()
+}
+
+function drawChickenSprite(
+  ctx: CanvasRenderingContext2D,
+  c: Chicken,
+  img: HTMLImageElement,
+  s: number,
+  bodyR: number,
+  wingPhase: number,
+): void {
+  const targetH = bodyR * 3.15
+  const aspect = img.naturalWidth / img.naturalHeight
+  const drawH = targetH
+  const drawW = drawH * aspect
+
+  const bob = c.state === 'flying' ? Math.sin(c.flap * 0.5) * 2.5 * s : 0
+  const flapRot = c.state === 'flying' ? wingPhase * 0.08 : 0
+  const flapScaleY = c.state === 'flying' ? 1 + wingPhase * 0.04 : 1
+  const fallRot = c.state === 'falling' || c.state === 'hit' ? c.hitT * 2.2 : 0
+
+  ctx.save()
+  ctx.translate(0, bob)
+  ctx.rotate(flapRot + fallRot * c.facing)
+  ctx.scale(1, flapScaleY)
+
+  // Anchor roughly at body center of the standing sprite
+  ctx.drawImage(img, -drawW * 0.48, -drawH * 0.58, drawW, drawH)
+
+  if (c.state === 'hit' || c.state === 'falling') {
+    // X eyes overlay
+    const ex = drawW * 0.12
+    const ey = -drawH * 0.22
+    ctx.strokeStyle = '#222'
+    ctx.lineWidth = 2.5 * s
+    ctx.lineCap = 'round'
+    for (const ox of [-6 * s, 7 * s]) {
+      ctx.beginPath()
+      ctx.moveTo(ex + ox - 4 * s, ey - 4 * s)
+      ctx.lineTo(ex + ox + 4 * s, ey + 4 * s)
+      ctx.moveTo(ex + ox + 4 * s, ey - 4 * s)
+      ctx.lineTo(ex + ox - 4 * s, ey + 4 * s)
+      ctx.stroke()
+    }
+  }
+  ctx.restore()
+}
+
+function drawChickenProcedural(
+  ctx: CanvasRenderingContext2D,
+  c: Chicken,
+  s: number,
+  bodyR: number,
+  wingPhase: number,
+): void {
+  const pal = PALETTES[c.palette]
+
   // Far wing (behind body)
   ctx.fillStyle = pal.wing
   ctx.save()
@@ -178,7 +290,6 @@ export function drawChicken(ctx: CanvasRenderingContext2D, c: Chicken): void {
   ctx.beginPath()
   ctx.ellipse(0, 0, 15 * s, 7.5 * s, 0, 0, Math.PI * 2)
   ctx.fill()
-  // Feather lines
   ctx.strokeStyle = pal.accent
   ctx.globalAlpha = 0.35
   ctx.lineWidth = 1 * s
@@ -191,25 +302,22 @@ export function drawChicken(ctx: CanvasRenderingContext2D, c: Chicken): void {
   ctx.globalAlpha = 1
   ctx.restore()
 
-  // Body with subtle gradient feel (two ellipses)
+  // Body
   ctx.fillStyle = pal.body
   ctx.beginPath()
   ctx.ellipse(0, 2 * s, bodyR, bodyR * 0.85, 0, 0, Math.PI * 2)
   ctx.fill()
 
-  // Body highlight
   ctx.fillStyle = 'rgba(255,255,255,0.18)'
   ctx.beginPath()
   ctx.ellipse(-4 * s, -4 * s, bodyR * 0.45, bodyR * 0.28, -0.4, 0, Math.PI * 2)
   ctx.fill()
 
-  // Belly
   ctx.fillStyle = pal.belly
   ctx.beginPath()
   ctx.ellipse(3 * s, 9 * s, bodyR * 0.55, bodyR * 0.42, 0, 0, Math.PI * 2)
   ctx.fill()
 
-  // Speckle dots
   if (c.palette === 'speckle') {
     ctx.fillStyle = 'rgba(90,60,30,0.35)'
     for (const [dx, dy, r] of [
@@ -245,7 +353,6 @@ export function drawChicken(ctx: CanvasRenderingContext2D, c: Chicken): void {
   ctx.globalAlpha = 1
   ctx.restore()
 
-  // Fancy tail feathers (3 layers)
   const tailColors = [pal.tail, pal.accent, pal.wing]
   for (let i = 0; i < 3; i++) {
     ctx.fillStyle = tailColors[i]!
@@ -259,19 +366,16 @@ export function drawChicken(ctx: CanvasRenderingContext2D, c: Chicken): void {
     ctx.fill()
   }
 
-  // Head
   ctx.fillStyle = pal.head
   ctx.beginPath()
   ctx.arc(bodyR * 0.55, -bodyR * 0.55, 14 * s, 0, Math.PI * 2)
   ctx.fill()
 
-  // Cheek blush
   ctx.fillStyle = 'rgba(255,120,100,0.25)'
   ctx.beginPath()
   ctx.ellipse(bodyR * 0.72, -bodyR * 0.4, 4 * s, 3 * s, 0, 0, Math.PI * 2)
   ctx.fill()
 
-  // Comb (3 lobes, richer)
   ctx.fillStyle = '#e22828'
   ctx.beginPath()
   ctx.moveTo(bodyR * 0.32, -bodyR * 0.92)
@@ -281,19 +385,12 @@ export function drawChicken(ctx: CanvasRenderingContext2D, c: Chicken): void {
   ctx.quadraticCurveTo(bodyR * 1.0, -bodyR * 1.22, bodyR * 0.88, -bodyR * 0.85)
   ctx.closePath()
   ctx.fill()
-  // Comb highlight
-  ctx.fillStyle = 'rgba(255,180,160,0.4)'
-  ctx.beginPath()
-  ctx.ellipse(bodyR * 0.5, -bodyR * 1.15, 3 * s, 4 * s, 0, 0, Math.PI * 2)
-  ctx.fill()
 
-  // Wattle
   ctx.fillStyle = '#d02020'
   ctx.beginPath()
   ctx.ellipse(bodyR * 0.78, -bodyR * 0.22, 4.2 * s, 6.5 * s, 0.25, 0, Math.PI * 2)
   ctx.fill()
 
-  // Beak with shade
   ctx.fillStyle = '#ff9a20'
   ctx.beginPath()
   ctx.moveTo(bodyR * 0.85, -bodyR * 0.52)
@@ -301,15 +398,7 @@ export function drawChicken(ctx: CanvasRenderingContext2D, c: Chicken): void {
   ctx.lineTo(bodyR * 0.85, -bodyR * 0.28)
   ctx.closePath()
   ctx.fill()
-  ctx.fillStyle = '#e87810'
-  ctx.beginPath()
-  ctx.moveTo(bodyR * 0.85, -bodyR * 0.4)
-  ctx.lineTo(bodyR * 1.4, -bodyR * 0.42)
-  ctx.lineTo(bodyR * 0.85, -bodyR * 0.28)
-  ctx.closePath()
-  ctx.fill()
 
-  // Eyes
   const ex = bodyR * 0.55
   const ey = -bodyR * 0.65
   if (c.state === 'hit' || c.state === 'falling') {
@@ -326,22 +415,18 @@ export function drawChicken(ctx: CanvasRenderingContext2D, c: Chicken): void {
     }
   } else {
     for (const ox of [-5 * s, 6 * s]) {
-      // White
       ctx.fillStyle = '#fff'
       ctx.beginPath()
       ctx.ellipse(ex + ox, ey, 5.2 * s, 5.5 * s, 0, 0, Math.PI * 2)
       ctx.fill()
-      // Iris tint
       ctx.fillStyle = c.palette === 'gold' ? '#5a3a08' : '#2a1810'
       ctx.beginPath()
       ctx.arc(ex + ox + 1.4 * s, ey + 0.6 * s, 2.4 * s, 0, Math.PI * 2)
       ctx.fill()
-      // Pupil
       ctx.fillStyle = '#111'
       ctx.beginPath()
       ctx.arc(ex + ox + 1.6 * s, ey + 0.7 * s, 1.3 * s, 0, Math.PI * 2)
       ctx.fill()
-      // Shine
       ctx.fillStyle = '#fff'
       ctx.beginPath()
       ctx.arc(ex + ox + 2.4 * s, ey - 1.2 * s, 1.1 * s, 0, Math.PI * 2)
@@ -349,7 +434,6 @@ export function drawChicken(ctx: CanvasRenderingContext2D, c: Chicken): void {
     }
   }
 
-  // Legs tucked
   if (c.state === 'flying') {
     ctx.strokeStyle = '#e89820'
     ctx.lineWidth = 2.2 * s
@@ -360,34 +444,7 @@ export function drawChicken(ctx: CanvasRenderingContext2D, c: Chicken): void {
     ctx.moveTo(6 * s, bodyR * 0.7)
     ctx.lineTo(8 * s, bodyR * 1.08)
     ctx.stroke()
-    // Tiny toes
-    ctx.lineWidth = 1.5 * s
-    ctx.beginPath()
-    ctx.moveTo(-3 * s, bodyR * 1.08)
-    ctx.lineTo(-6 * s, bodyR * 1.15)
-    ctx.moveTo(-1 * s, bodyR * 1.08)
-    ctx.lineTo(1 * s, bodyR * 1.15)
-    ctx.moveTo(7 * s, bodyR * 1.08)
-    ctx.lineTo(4 * s, bodyR * 1.15)
-    ctx.moveTo(9 * s, bodyR * 1.08)
-    ctx.lineTo(11 * s, bodyR * 1.15)
-    ctx.stroke()
   }
-
-  // Tiny crown sparkles for gold
-  if (c.palette === 'gold' && c.state === 'flying') {
-    const sparkle = (Math.sin(c.flap * 0.7) + 1) * 0.5
-    ctx.fillStyle = `rgba(255,255,200,${0.5 + sparkle * 0.5})`
-    for (const [dx, dy] of [
-      [-bodyR * 0.2, -bodyR * 1.35],
-      [bodyR * 0.9, -bodyR * 1.1],
-      [bodyR * 0.1, -bodyR * 0.2],
-    ] as const) {
-      drawSpark(ctx, dx, dy, 3.5 * s * (0.7 + sparkle * 0.4))
-    }
-  }
-
-  ctx.restore()
 }
 
 function drawSpark(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {

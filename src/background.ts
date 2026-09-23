@@ -1,6 +1,94 @@
-/** Richer painted rural side-view with soft parallax layers */
+/** Meadow concept art background with procedural fallback */
+
+const ART_BASE = `${import.meta.env.BASE_URL}art/`
+
+let meadowImg: HTMLImageElement | null = null
+let meadowReady = false
+let meadowFailed = false
+
+function ensureMeadow(): void {
+  if (meadowImg || meadowFailed) return
+  const img = new Image()
+  img.decoding = 'async'
+  img.onload = () => {
+    meadowReady = true
+  }
+  img.onerror = () => {
+    meadowFailed = true
+    meadowImg = null
+  }
+  img.src = `${ART_BASE}bg-meadow.webp`
+  meadowImg = img
+}
+
+/** Cover-style draw: scale to fill, crop center (preserve aspect). */
+function drawCover(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  dx: number,
+  dy: number,
+  dw: number,
+  dh: number,
+): void {
+  const iw = img.naturalWidth
+  const ih = img.naturalHeight
+  if (!iw || !ih) return
+  const scale = Math.max(dw / iw, dh / ih)
+  const sw = dw / scale
+  const sh = dh / scale
+  const sx = (iw - sw) * 0.5
+  const sy = (ih - sh) * 0.5
+  ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh)
+}
 
 export function drawBackground(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  time: number,
+): void {
+  ensureMeadow()
+
+  if (meadowReady && meadowImg) {
+    drawMeadowBackground(ctx, meadowImg, w, h, time)
+    return
+  }
+
+  drawProceduralBackground(ctx, w, h, time)
+}
+
+function drawMeadowBackground(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  w: number,
+  h: number,
+  time: number,
+): void {
+  const t = time * 0.001
+  // Soft phone-safe drift: draw slightly oversized and nudge horizontally
+  const over = 1.08
+  const dw = w * over
+  const dh = h * over
+  const drift = Math.sin(t * 0.12) * (w * 0.035)
+  const dx = (w - dw) * 0.5 + drift
+  const dy = (h - dh) * 0.5
+
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(0, 0, w, h)
+  ctx.clip()
+  drawCover(ctx, img, dx, dy, dw, dh)
+  ctx.restore()
+
+  // Light vignette so HUD / chickens read better
+  const vig = ctx.createRadialGradient(w * 0.5, h * 0.45, h * 0.2, w * 0.5, h * 0.5, h * 0.85)
+  vig.addColorStop(0, 'rgba(0,0,0,0)')
+  vig.addColorStop(1, 'rgba(20,30,10,0.18)')
+  ctx.fillStyle = vig
+  ctx.fillRect(0, 0, w, h)
+}
+
+function drawProceduralBackground(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number,

@@ -141,8 +141,10 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(20, 30, 15, 0.55);
-  backdrop-filter: blur(3px);
+  background:
+    linear-gradient(180deg, rgba(30, 40, 18, 0.45), rgba(20, 28, 12, 0.62)),
+    url("/art/bg-meadow.webp") center / cover no-repeat;
+  backdrop-filter: blur(2px);
   cursor: default;
   padding: 0.75rem;
   overflow-y: auto;
@@ -154,10 +156,10 @@ html, body {
 
 .panel {
   background:
-    linear-gradient(165deg, #fffaf0 0%, #f5e0a8 55%, #e8c878 100%);
+    linear-gradient(165deg, rgba(255,250,240,0.94) 0%, rgba(245,224,168,0.95) 55%, rgba(232,200,120,0.96) 100%);
   border: 4px solid #5a3a10;
   border-radius: 22px;
-  padding: 1.15rem 1.25rem 1.35rem;
+  padding: 0.85rem 1.25rem 1.35rem;
   text-align: center;
   max-width: 400px;
   width: 100%;
@@ -165,6 +167,18 @@ html, body {
     0 0 0 3px rgba(255, 220, 120, 0.35),
     0 14px 32px rgba(0,0,0,0.4),
     inset 0 1px 0 rgba(255,255,255,0.7);
+  overflow: hidden;
+}
+
+.menu-splash {
+  width: calc(100% + 2.5rem);
+  margin: -0.85rem -1.25rem 0.65rem;
+  height: clamp(88px, 22vw, 128px);
+  background:
+    linear-gradient(180deg, rgba(255,250,240,0) 55%, rgba(255,250,240,0.85) 100%),
+    url("/art/flying-chickens.webp") center 35% / cover no-repeat;
+  border-bottom: 2px solid rgba(90, 58, 16, 0.25);
+  pointer-events: none;
 }
 
 .panel h1 {
