@@ -1,10 +1,11 @@
 import type { Chicken, ChickenPalette, DepthLayer } from './types'
 
 export const LAYERS: DepthLayer[] = [
-  { scale: 0.45, speed: 55, points: 5, yMin: 0.28, yMax: 0.42 },
-  { scale: 0.7, speed: 90, points: 10, yMin: 0.35, yMax: 0.5 },
-  { scale: 1.0, speed: 130, points: 25, yMin: 0.45, yMax: 0.58 },
-  { scale: 1.35, speed: 170, points: 50, yMin: 0.52, yMax: 0.62, gold: true },
+  // Farther (smaller scale) = more points; closer = fewer
+  { scale: 0.45, speed: 55, points: 50, yMin: 0.28, yMax: 0.42 },
+  { scale: 0.7, speed: 90, points: 25, yMin: 0.35, yMax: 0.5 },
+  { scale: 1.0, speed: 130, points: 10, yMin: 0.45, yMax: 0.58 },
+  { scale: 1.35, speed: 170, points: 5, yMin: 0.52, yMax: 0.62 },
 ]
 
 const ART_BASE = `${import.meta.env.BASE_URL}art/sprites/`
@@ -91,13 +92,12 @@ const PALETTES: Record<
 
 let nextId = 1
 
-function pickPalette(layer: DepthLayer, goldBoost = 0): ChickenPalette {
-  if (layer.gold) {
-    // Closest layer is often golden
-    if (Math.random() < 0.55 + goldBoost * 0.3) return 'gold'
-  } else if (goldBoost > 0 && Math.random() < goldBoost * 0.35) {
-    return 'gold'
-  }
+function pickPalette(goldBoost = 0, forceGold = false): ChickenPalette {
+  // Gold is a palette/special — not tied to any depth layer
+  if (forceGold) return 'gold'
+  const goldChance =
+    goldBoost > 0 ? Math.min(0.9, 0.2 + goldBoost) : 0.1
+  if (Math.random() < goldChance) return 'gold'
   const pool: ChickenPalette[] = ['brown', 'ginger', 'white', 'speckle', 'ginger', 'brown']
   return pool[Math.floor(Math.random() * pool.length)]!
 }
@@ -107,12 +107,11 @@ export function spawnChicken(
   h: number,
   opts?: { goldBoost?: number; forceGoldLayer?: boolean },
 ): Chicken {
-  let layer: DepthLayer
-  if (opts?.forceGoldLayer || (opts?.goldBoost && Math.random() < opts.goldBoost)) {
-    layer = LAYERS[3]!
-  } else {
-    layer = LAYERS[Math.floor(Math.random() * LAYERS.length)]!
-  }
+  // forceGoldLayer = force gold *palette* on a random distance layer (not the old close/high-point layer)
+  const layer = LAYERS[Math.floor(Math.random() * LAYERS.length)]!
+  const forceGold =
+    !!opts?.forceGoldLayer ||
+    (!!opts?.goldBoost && Math.random() < opts.goldBoost)
   const facing: 1 | -1 = Math.random() < 0.5 ? 1 : -1
   const speed = layer.speed * (0.85 + Math.random() * 0.35)
   const y = h * (layer.yMin + Math.random() * (layer.yMax - layer.yMin))
@@ -131,7 +130,7 @@ export function spawnChicken(
     fallVy: 0,
     poofT: 0,
     wobble: Math.random() * Math.PI * 2,
-    palette: pickPalette(layer, opts?.goldBoost ?? 0),
+    palette: pickPalette(opts?.goldBoost ?? 0, forceGold),
   }
 }
 
@@ -167,7 +166,7 @@ export function chickenHitRadius(c: Chicken): number {
 }
 
 export function isGoldChicken(c: Chicken): boolean {
-  return c.palette === 'gold' || !!c.layer.gold
+  return c.palette === 'gold'
 }
 
 export function drawChicken(ctx: CanvasRenderingContext2D, c: Chicken): void {

@@ -4,7 +4,7 @@ export const CHALLENGES: ChallengeDef[] = [
   {
     id: 'klasika',
     title: 'Klasično',
-    desc: '90 sekund — zberi čim več točk!',
+    desc: '90 sekund — oddaljene kokoši = več točk!',
     icon: '🏆',
     duration: 90,
   },
@@ -19,7 +19,7 @@ export const CHALLENGES: ChallengeDef[] = [
   {
     id: 'zlata',
     title: 'Samo zlata kokoš',
-    desc: 'Štejejo samo zlate (50 točk). Doseži 100 točk!',
+    desc: 'Samo zlate štejejo — točke po razdalji + zlati bonus. Doseži 100!',
     icon: '⭐',
     duration: 90,
     scoreGoal: 100,

@@ -8,7 +8,7 @@ export interface DepthLayer {
   points: number
   yMin: number
   yMax: number
-  /** Prefer gold palette when true (closest / highest points layer) */
+  /** @deprecated Gold is palette-only; kept optional for compat */
   gold?: boolean
 }
 
@@ -57,7 +57,7 @@ export interface ChallengeDef {
   catchGoal?: number
   /** Score goal to win (optional) */
   scoreGoal?: number
-  /** Only gold-layer chickens count for score/catch */
+  /** Only gold-palette chickens count for score/catch */
   goldOnly?: boolean
   /** Any miss fails immediately */
   noMiss?: boolean

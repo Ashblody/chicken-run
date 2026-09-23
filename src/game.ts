@@ -19,6 +19,9 @@ import type { ChallengeDef, ChallengeId, Chicken, Floater, GamePhase } from './t
 const MAX_AMMO = 5
 const AUTO_RELOAD_MS = 900
 const HS_KEY = 'chickenrun-highscore'
+const STREAK_NEEDED = 5
+const STREAK_BONUS = 50
+const GOLD_BONUS = 30
 
 export class Game {
   private canvas: HTMLCanvasElement
@@ -43,6 +46,7 @@ export class Game {
   private challenge: ChallengeDef = CHALLENGES[0]!
   private caught = 0
   private misses = 0
+  private streak = 0
   private stars: Record<ChallengeId, number> = loadStars()
   private toastTimer: number | null = null
 
@@ -179,6 +183,7 @@ export class Game {
     this.score = 0
     this.caught = 0
     this.misses = 0
+    this.streak = 0
     this.timeLeft = this.challenge.duration
     this.ammo = MAX_AMMO
     this.spawnAcc = 0
@@ -188,7 +193,7 @@ export class Game {
     this.hideToast()
     this.phase = 'playing'
     this.elOverlay.classList.add('hidden')
-    this.elReload.hidden = true
+    this.elReload.hidden = false
     this.elChallengeProgress.classList.remove('hidden')
     this.updateHud()
     this.renderAmmo()
@@ -316,7 +321,7 @@ export class Game {
 
   private shoot(): void {
     if (this.ammo <= 0) {
-      this.elReload.hidden = false
+      // Reload stays visible during play; nudge auto-reload if empty
       this.scheduleAutoReload()
       return
     }
@@ -344,19 +349,47 @@ export class Game {
 
       const gold = isGoldChicken(best)
       const countsForGold = !this.challenge.goldOnly || gold
-      const pts = countsForGold ? best.layer.points : 0
 
       if (countsForGold) {
         this.caught++
+        const distPts = best.layer.points
+        let pts = distPts
+        let floaterText = `+${distPts}`
+        let floaterColor = '#fff'
+
+        if (gold) {
+          pts += GOLD_BONUS
+          floaterText = `+${distPts} ★+${GOLD_BONUS}`
+          floaterColor = '#ffd700'
+          // Immediate free full reload
+          this.ammo = MAX_AMMO
+          this.clearAutoReload()
+          this.renderAmmo()
+        }
+
         this.score += pts
         this.floaters.push({
           x: best.x,
           y: best.y - 20,
-          text: pts > 0 ? `+${pts}` : '✓',
+          text: floaterText,
           life: 0.9,
           vy: -60,
-          color: gold ? '#ffd700' : '#fff',
+          color: floaterColor,
         })
+
+        this.streak++
+        if (this.streak >= STREAK_NEEDED) {
+          this.score += STREAK_BONUS
+          this.floaters.push({
+            x: best.x,
+            y: best.y - 48,
+            text: `NIZ! +${STREAK_BONUS}`,
+            life: 1.05,
+            vy: -72,
+            color: '#7dffb3',
+          })
+          this.streak = 0
+        }
       } else {
         // Hit non-gold in gold-only mode — no points, mild feedback
         this.floaters.push({
@@ -371,6 +404,7 @@ export class Game {
       this.updateHud()
       this.checkEarlyWin()
     } else {
+      this.streak = 0
       this.misses++
       if (this.challenge.noMiss) {
         this.endRound(false, 'Zgrešena strela! Izziv ni uspel.')
@@ -379,7 +413,6 @@ export class Game {
     }
 
     if (this.ammo <= 0) {
-      this.elReload.hidden = false
       this.scheduleAutoReload()
     }
   }
@@ -387,7 +420,8 @@ export class Game {
   private reload(): void {
     this.ammo = MAX_AMMO
     this.clearAutoReload()
-    this.elReload.hidden = true
+    // Keep reload visible while playing; hide only on menu/over
+    if (this.phase !== 'playing') this.elReload.hidden = true
     this.renderAmmo()
   }
 
