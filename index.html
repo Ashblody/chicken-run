@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="sl">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>ChickenRun</title>
+    <script type="module" crossorigin src="/chicken-run/assets/index-CMPz6ssg.js"></script>
+    <link rel="stylesheet" crossorigin href="/chicken-run/assets/index-B9udLRX2.css">
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="game"></canvas>
+      <div id="hud">
+        <div id="timer">01 : 30</div>
+        <div id="score">0</div>
+        <div id="challenge-progress" class="hidden">Klasično</div>
+      </div>
+      <div id="ammo"></div>
+      <button id="reload-btn" type="button" hidden>Naloži</button>
+      <div id="toast" class="toast hidden" role="status"></div>
+      <div id="overlay" class="overlay">
+        <div class="panel">
+          <div class="menu-splash" aria-hidden="true"></div>
+          <h1>ChickenRun</h1>
+          <p class="tagline">Lovi lude kokoši!</p>
+          <p id="overlay-msg">Izberi izziv in pritisni Začni!</p>
+          <div id="challenge-list" class="challenge-list" role="listbox" aria-label="Izzivi"></div>
+          <p id="high-score-line">Najboljši rezultat: <strong id="high-score">0</strong></p>
+          <button id="start-btn" type="button">Začni</button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
