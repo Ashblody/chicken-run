@@ -22,12 +22,15 @@
       <div id="overlay" class="overlay">
         <div class="panel">
           <div class="menu-splash" aria-hidden="true"></div>
-          <h1>ChickenRun</h1>
-          <p class="tagline">Lovi lude kokoši!</p>
-          <p id="overlay-msg">Izberi izziv in pritisni Začni!</p>
-          <div id="challenge-list" class="challenge-list" role="listbox" aria-label="Izzivi"></div>
-          <p id="high-score-line">Najboljši rezultat: <strong id="high-score">0</strong></p>
-          <button id="start-btn" type="button">Začni</button>
+          <div class="menu-head">
+            <h1>ChickenRun</h1>
+            <p class="tagline">Lovi lude kokoši!</p>
+          </div>
+          <p id="overlay-msg">Izberi igro in lovi!</p>
+          <button id="back-btn" type="button" class="back-btn" hidden>← Nazaj</button>
+          <div id="mode-list" class="mode-list" aria-label="Igre"></div>
+          <div id="challenge-list" class="challenge-list" aria-label="Izzivi" hidden></div>
+          <p id="high-score-line">🏅 Najboljši rezultat: <strong id="high-score">0</strong></p>
         </div>
       </div>
     </div>

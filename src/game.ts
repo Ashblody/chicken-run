@@ -56,7 +56,9 @@ export class Game {
   private elOverlay: HTMLElement
   private elMsg: HTMLElement
   private elHigh: HTMLElement
-  private elStart: HTMLButtonElement
+  private elBack: HTMLButtonElement
+  private elModeList: HTMLElement
+  private menuStep: 'modes' | 'challenges' = 'modes'
   private elReload: HTMLButtonElement
   private elChallengeList: HTMLElement
   private elChallengeProgress: HTMLElement
@@ -74,7 +76,8 @@ export class Game {
     this.elOverlay = must('#overlay')
     this.elMsg = must('#overlay-msg')
     this.elHigh = must('#high-score')
-    this.elStart = must('#start-btn') as HTMLButtonElement
+    this.elBack = must('#back-btn') as HTMLButtonElement
+    this.elModeList = must('#mode-list')
     this.elReload = must('#reload-btn') as HTMLButtonElement
     this.elChallengeList = must('#challenge-list')
     this.elChallengeProgress = must('#challenge-progress')
@@ -95,7 +98,7 @@ export class Game {
     this.resize()
     this.renderAmmo()
     this.renderChallengeList()
-    this.showMenu('Izberi izziv in pritisni Začni!')
+    this.showMenu('Izberi igro in lovi!')
     this.loop(performance.now())
   }
 
@@ -120,7 +123,10 @@ export class Game {
       if (this.phase === 'playing') this.shoot()
     })
 
-    this.elStart.addEventListener('click', () => this.startRound())
+    this.elBack.addEventListener('click', () => {
+      this.menuStep = 'modes'
+      this.renderChallengeList()
+    })
     this.elReload.addEventListener('click', () => this.reload())
 
     document.addEventListener('gesturestart', (e) => e.preventDefault())
@@ -128,29 +134,97 @@ export class Game {
 
   private renderChallengeList(): void {
     this.stars = loadStars()
+    const base = import.meta.env.BASE_URL
+    const sprite = (n: string) => `${base}art/sprites/chicken-${n}.webp`
+    const inChallenges = this.menuStep === 'challenges'
+    this.elModeList.hidden = inChallenges
+    this.elChallengeList.hidden = !inChallenges
+    this.elBack.hidden = !inChallenges
+    this.elModeList.innerHTML = ''
     this.elChallengeList.innerHTML = ''
-    for (const c of CHALLENGES) {
+
+    const sub = ['ujeni20', 'natancno', 'prezivi'] as ChallengeId[]
+    const subStars = sub.reduce((n, id) => n + (this.stars[id] || 0), 0)
+    const modes: {
+      cls: string
+      icon: string
+      img: string
+      title: string
+      desc: string
+      badge: string
+      run: () => void
+    }[] = [
+      {
+        cls: 'mode-classic',
+        icon: '🏆',
+        img: sprite('brown'),
+        title: 'Klasično',
+        desc: '90 sekund lova — daljše kokoši dajo več točk!',
+        badge: starString(this.stars.klasika || 0),
+        run: () => this.pickChallenge('klasika'),
+      },
+      {
+        cls: 'mode-challenges',
+        icon: '🎯',
+        img: sprite('speckle'),
+        title: 'Izzivi',
+        desc: 'Tri posebne naloge z zvezdicami.',
+        badge: `★ ${subStars}/${sub.length * 3}`,
+        run: () => {
+          this.menuStep = 'challenges'
+          this.renderChallengeList()
+        },
+      },
+      {
+        cls: 'mode-gold',
+        icon: '⭐',
+        img: sprite('gold'),
+        title: 'Zlati lov',
+        desc: 'Štejejo samo zlate kokoši. Doseži 100 točk!',
+        badge: starString(this.stars.zlata || 0),
+        run: () => this.pickChallenge('zlata'),
+      },
+    ]
+    for (const m of modes) {
       const btn = document.createElement('button')
       btn.type = 'button'
-      btn.className =
-        'challenge-card' + (c.id === this.challenge.id ? ' selected' : '')
+      btn.className = `mode-card ${m.cls}`
+      btn.innerHTML = `
+        <span class="mode-art"><img src="${m.img}" alt="" draggable="false" /></span>
+        <span class="mode-body">
+          <span class="mode-title"><span class="mode-icon">${m.icon}</span> ${m.title}</span>
+          <span class="mode-desc">${m.desc}</span>
+          <span class="mode-stars" aria-label="Zvezdice">${m.badge}</span>
+        </span>
+        <span class="mode-go" aria-hidden="true">▶</span>
+      `
+      btn.addEventListener('click', m.run)
+      this.elModeList.appendChild(btn)
+    }
+
+    for (const id of sub) {
+      const c = getChallenge(id)
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'challenge-card'
       btn.dataset.id = c.id
-      const stars = this.stars[c.id] || 0
       btn.innerHTML = `
         <span class="ch-icon">${c.icon}</span>
         <span class="ch-body">
           <span class="ch-title">${c.title}</span>
           <span class="ch-desc">${c.desc}</span>
-          <span class="ch-stars" aria-label="Zvezdice">${starString(stars)}</span>
+          <span class="ch-stars" aria-label="Zvezdice">${starString(this.stars[c.id] || 0)}</span>
         </span>
+        <span class="mode-go" aria-hidden="true">▶</span>
       `
-      btn.addEventListener('click', () => {
-        this.challenge = getChallenge(c.id)
-        this.renderChallengeList()
-        this.elMsg.textContent = c.desc
-      })
+      btn.addEventListener('click', () => this.pickChallenge(c.id))
       this.elChallengeList.appendChild(btn)
     }
+  }
+
+  private pickChallenge(id: ChallengeId): void {
+    this.challenge = getChallenge(id)
+    this.startRound()
   }
 
   private resize(): void {
@@ -165,12 +239,12 @@ export class Game {
     this.pointer.y = this.h / 2
   }
 
-  private showMenu(msg: string): void {
+  private showMenu(msg: string, isResult = false): void {
     this.phase = this.score > 0 && this.timeLeft <= 0 ? 'over' : 'menu'
     this.elMsg.textContent = msg
     this.elHigh.textContent = String(this.highScore)
-    this.elStart.textContent =
-      this.score > 0 || this.phase === 'over' ? 'Ponovi' : 'Začni'
+    this.elMsg.classList.toggle('result', isResult)
+    this.menuStep = 'modes'
     this.elOverlay.classList.remove('hidden')
     this.elReload.hidden = true
     this.elChallengeProgress.classList.add('hidden')
@@ -232,10 +306,10 @@ export class Game {
         `Zmaga! ${reason}`,
         `${starString(stars)}  ·  ${this.score} točk`,
       )
-      this.showMenu(`Bravo! ${reason} Rezultat: ${this.score}`)
+      this.showMenu(`🎉 Bravo! ${reason} Rezultat: ${this.score}`, true)
     } else {
       this.showToast('fail', `Žal … ${reason}`, `Rezultat: ${this.score}`)
-      this.showMenu(`Konec! ${reason} Rezultat: ${this.score}`)
+      this.showMenu(`Konec! ${reason} Rezultat: ${this.score}`, true)
     }
   }
 
