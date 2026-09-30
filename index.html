@@ -1,14 +1,15 @@
 <!doctype html>
-<html lang="sl">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="description" content="ChickenRun - a fun chicken shooting game for kids." />
     <title>ChickenRun</title>
-    <script type="module" crossorigin src="/chicken-run/assets/index-BISVu6qf.js"></script>
-    <link rel="stylesheet" crossorigin href="/chicken-run/assets/index-Dn-4xHf1.css">
+    <script type="module" crossorigin src="/chicken-run/assets/index-pwPGpzeC.js"></script>
+    <link rel="stylesheet" crossorigin href="/chicken-run/assets/index-D924HiBE.css">
   </head>
   <body>
     <div id="app">
@@ -16,23 +17,39 @@
       <div id="hud">
         <div id="timer">01 : 30</div>
         <div id="score">0</div>
-        <div id="challenge-progress" class="hidden">Klasično</div>
+        <div id="challenge-progress" class="hidden">Classic</div>
       </div>
+      <button id="pause-btn" class="pause-btn" type="button" aria-label="Pause" title="Pause (Esc)">
+        <span class="pause-icon" aria-hidden="true"></span>
+      </button>
       <div id="ammo"></div>
-      <button id="reload-btn" type="button" hidden>Naloži</button>
+      <button id="reload-btn" type="button">Reload</button>
       <div id="toast" class="toast hidden" role="status"></div>
       <div id="overlay" class="overlay">
         <div class="panel">
           <div class="menu-splash" aria-hidden="true"></div>
           <div class="menu-head">
             <h1>ChickenRun</h1>
-            <p class="tagline">Lovi lude kokoši!</p>
+            <p class="tagline">Catch the crazy chickens!</p>
           </div>
-          <p id="overlay-msg">Izberi igro in lovi!</p>
-          <button id="back-btn" type="button" class="back-btn" hidden>← Nazaj</button>
-          <div id="mode-list" class="mode-list" aria-label="Igre"></div>
-          <div id="challenge-list" class="challenge-list" aria-label="Izzivi" hidden></div>
-          <p id="high-score-line">🏅 Najboljši rezultat: <strong id="high-score">0</strong></p>
+          <p id="overlay-msg">Pick a game and start hunting!</p>
+          <div class="views" id="views" data-dir="fwd">
+            <button id="back-btn" type="button" class="back-btn" hidden>← Back</button>
+            <div id="mode-list" class="mode-list" aria-label="Games"></div>
+            <div id="challenge-list" class="challenge-list" aria-label="Challenges" hidden></div>
+          </div>
+          <p id="high-score-line">🏅 Best score: <strong id="high-score">0</strong></p>
+        </div>
+      </div>
+      <div id="pause-overlay" class="overlay pause-overlay hidden" role="dialog" aria-modal="true" aria-label="Game paused" aria-hidden="true" inert>
+        <div class="panel pause-panel">
+          <h2>Paused</h2>
+          <p id="pause-info" class="pause-info">Score 0 · Time 01:30</p>
+          <div class="pause-actions">
+            <button id="resume-btn" type="button" class="pbtn pbtn-primary">▶ Resume</button>
+            <button id="restart-btn" type="button" class="pbtn">↻ Restart</button>
+            <button id="quit-btn" type="button" class="pbtn pbtn-quit">✕ Quit to menu</button>
+          </div>
         </div>
       </div>
     </div>
