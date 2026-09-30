@@ -8,8 +8,8 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="description" content="ChickenRun - a fun chicken shooting game for kids." />
     <title>ChickenRun</title>
-    <script type="module" crossorigin src="/chicken-run/assets/index-DqkoaIM5.js"></script>
-    <link rel="stylesheet" crossorigin href="/chicken-run/assets/index-Bzy-L8yc.css">
+    <script type="module" crossorigin src="/chicken-run/assets/index-8hBeJWFR.js"></script>
+    <link rel="stylesheet" crossorigin href="/chicken-run/assets/index-fFO7EQAD.css">
   </head>
   <body>
     <div id="app">
@@ -32,6 +32,16 @@
       </button>
       <div id="ammo"></div>
       <button id="reload-btn" type="button">Reload</button>
+      <div id="ready" class="ready hidden" aria-hidden="true" inert>
+        <div id="ready-card" class="ready-card">
+          <div id="ready-icon" class="ready-icon" aria-hidden="true">🏆</div>
+          <h2 id="ready-title">Classic</h2>
+          <p id="ready-goal">90 seconds of hunting!</p>
+          <button id="start-btn" type="button" class="start-btn">Start</button>
+        </div>
+        <button id="ready-back" type="button" class="ready-back">← Menu</button>
+      </div>
+      <div id="countdown" class="countdown off" role="status" aria-live="assertive"></div>
       <div id="toast" class="toast hidden" role="status"></div>
       <div id="overlay" class="overlay">
         <div class="panel">
@@ -41,6 +51,7 @@
             <p class="tagline">Catch the crazy chickens!</p>
           </div>
           <p id="overlay-msg">Pick a game and start hunting!</p>
+          <button id="again-btn" type="button" class="pbtn pbtn-primary again-btn" hidden>↻ Play again</button>
           <div class="views" id="views" data-dir="fwd">
             <button id="back-btn" type="button" class="back-btn" hidden>← Back</button>
             <div id="mode-list" class="mode-list" aria-label="Games"></div>
