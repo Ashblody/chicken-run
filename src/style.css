@@ -39,6 +39,21 @@ html, body {
   z-index: 5;
 }
 
+/* In-play UI fades in/out with the .playing class on #app */
+#hud, #ammo, #reload-btn, #pause-btn {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.25s ease, visibility 0s linear 0.25s;
+}
+#app.playing #hud,
+#app.playing #ammo,
+#app.playing #reload-btn,
+#app.playing #pause-btn {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.25s ease, visibility 0s;
+}
+
 #timer, #score {
   position: absolute;
   top: max(12px, env(safe-area-inset-top));
@@ -60,7 +75,7 @@ html, body {
 
 #challenge-progress {
   position: absolute;
-  top: max(56px, calc(env(safe-area-inset-top) + 44px));
+  top: max(66px, calc(env(safe-area-inset-top) + 54px));
   left: 50%;
   transform: translateX(-50%);
   max-width: min(92vw, 420px);
@@ -113,6 +128,7 @@ html, body {
 
 #reload-btn {
   position: absolute;
+  min-height: 48px;
   left: 50%;
   bottom: max(18px, env(safe-area-inset-bottom));
   transform: translateX(-50%);
@@ -127,6 +143,36 @@ html, body {
   cursor: pointer;
   box-shadow: 0 4px 0 #8a5a10, 0 6px 12px rgba(0,0,0,0.25);
   pointer-events: auto;
+}
+
+/* Pause button: small, top centre, between timer (left) and score (right) */
+.pause-btn {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  left: 50%;
+  margin-left: -21px;
+  width: 42px;
+  height: 42px;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(255, 220, 120, 0.6);
+  border-radius: 50%;
+  background: linear-gradient(180deg, rgba(40, 30, 10, 0.55), rgba(20, 15, 5, 0.45));
+  cursor: pointer;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.25);
+  pointer-events: auto;
+  transition: opacity 0.25s ease, visibility 0s linear 0.25s, transform 0.12s ease;
+}
+#app.playing .pause-btn { transition: opacity 0.25s ease, visibility 0s, transform 0.12s ease; }
+.pause-btn:active { transform: translateY(2px); }
+.pause-btn:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+.pause-icon {
+  width: 14px;
+  height: 16px;
+  border-left: 5px solid #fff;
+  border-right: 5px solid #fff;
 }
 
 #reload-btn:active {
@@ -150,9 +196,73 @@ html, body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.28s ease, visibility 0s;
 }
 
-.overlay.hidden { display: none; }
+.overlay.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.28s ease, visibility 0s linear 0.28s;
+}
+
+.overlay .panel { transition: transform 0.28s ease; }
+.overlay.hidden .panel { transform: translateY(14px) scale(0.98); }
+
+/* Pause overlay: dim the frozen game instead of the meadow menu */
+.pause-overlay {
+  z-index: 25;
+  align-items: center;
+  background: rgba(10, 20, 8, 0.55);
+}
+.panel.pause-panel {
+  max-width: 340px;
+  padding: 1rem 1rem 1.1rem;
+}
+.pause-panel h2 {
+  font-size: clamp(1.6rem, 7vw, 2.2rem);
+  color: #d03418;
+  text-shadow: 2px 2px 0 #fff, 3px 3px 0 #b8801a;
+}
+.pause-info {
+  color: #3a2a10;
+  font-weight: 700;
+  font-size: 0.9rem;
+  margin: 0.2rem 0 0.8rem;
+}
+.pause-actions { display: flex; flex-direction: column; gap: 0.6rem; }
+.pbtn {
+  min-height: 52px;
+  border: 3px solid #4a7a2a;
+  border-radius: 999px;
+  background: #fff;
+  color: #2f6a1a;
+  font: inherit;
+  font-size: 1.1rem;
+  font-weight: 800;
+  padding: 0.3rem 1.2rem;
+  cursor: pointer;
+  box-shadow: 0 4px 0 #4a7a2a;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s;
+}
+.pbtn:hover { filter: brightness(1.05); }
+.pbtn:active { transform: translateY(3px); box-shadow: 0 1px 0 #4a7a2a; }
+.pbtn:focus-visible { outline: 4px solid #2a68c0; outline-offset: 2px; }
+.pbtn-primary { background: linear-gradient(180deg, #7fdc4a, #3fa02a); color: #fff; border-color: #2a7a20; box-shadow: 0 4px 0 #2a7a20; text-shadow: 0 1px 0 rgba(0,0,0,0.3); }
+.pbtn-quit { border-color: #a02818; color: #a02818; box-shadow: 0 4px 0 #a02818; }
+
+/* Menu sub-view transitions (modes <-> challenges) */
+.views { display: block; }
+.view-in { animation: view-in-fwd 0.26s ease both; }
+.views[data-dir="back"] .view-in { animation-name: view-in-back; }
+.view-out { animation: view-out-fwd 0.15s ease both; }
+.views[data-dir="back"] .view-out { animation-name: view-out-back; }
+@keyframes view-in-fwd { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes view-in-back { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+@keyframes view-out-fwd { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(-28px); } }
+@keyframes view-out-back { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(28px); } }
 
 .panel {
   margin: auto;
@@ -209,7 +319,7 @@ html, body {
   border-radius: 14px;
   padding: 0.45rem 0.6rem;
   font-weight: 800;
-  animation: pop-in 0.35s ease;
+  animation: pop-in 0.3s ease;
 }
 
 .mode-list, .challenge-list {
@@ -237,17 +347,13 @@ html, body {
   color: #fff;
   box-shadow: 0 5px 0 rgba(0,0,0,0.25), 0 8px 16px rgba(0,0,0,0.2);
   transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s;
-  animation: pop-in 0.4s ease backwards;
 }
-
-.mode-card:nth-child(2) { animation-delay: 0.06s; }
-.mode-card:nth-child(3) { animation-delay: 0.12s; }
 
 .mode-classic { background: linear-gradient(135deg, #5cc03a, #2f8a2a); }
 .mode-challenges { background: linear-gradient(135deg, #4aa8e8, #2a68c0); }
 .mode-gold { background: linear-gradient(135deg, #ffd23a, #e88a10); color: #4a2a00; }
 
-.mode-card:hover { transform: translateY(-3px) scale(1.015); filter: brightness(1.07); }
+.mode-card:hover { transform: translateY(-2px); filter: brightness(1.07); }
 .mode-card:active {
   transform: translateY(3px) scale(0.985);
   box-shadow: 0 2px 0 rgba(0,0,0,0.25), 0 3px 8px rgba(0,0,0,0.2);
@@ -359,11 +465,8 @@ html, body {
   box-shadow: 0 5px 0 rgba(0,0,0,0.25), 0 8px 16px rgba(0,0,0,0.2);
   text-align: left;
   transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s;
-  animation: pop-in 0.35s ease backwards;
 }
-.challenge-card:nth-child(2) { animation-delay: 0.06s; }
-.challenge-card:nth-child(3) { animation-delay: 0.12s; }
-.challenge-card:hover { transform: translateY(-3px); filter: brightness(1.07); }
+.challenge-card:hover { transform: translateY(-2px); filter: brightness(1.07); }
 .challenge-card:active {
   transform: translateY(3px) scale(0.985);
   box-shadow: 0 2px 0 rgba(0,0,0,0.25);
@@ -428,17 +531,26 @@ html, body {
   .mode-body, .ch-body { flex: none; align-items: center; }
   #high-score-line { margin-top: 0.4rem; }
   .back-btn { min-height: 44px; margin-bottom: 0.4rem; }
+  .panel.pause-panel { max-width: 460px; padding: 0.6rem 1rem 0.8rem; }
+  .pause-info { margin-bottom: 0.5rem; }
+  .pause-actions { flex-direction: row; gap: 0.5rem; }
+  .pbtn { flex: 1 1 0; min-width: 0; font-size: 1rem; padding: 0.3rem 0.5rem; }
+  #timer, #score { font-size: 1.3rem; }
+  #challenge-progress { top: 58px; font-size: 0.75rem; padding: 0.15rem 0.8rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mode-card, .challenge-card, #overlay-msg.result { animation: none; }
-  .mode-card, .challenge-card { transition: none; }
+  .view-in, .view-out, #overlay-msg.result, .toast { animation: none; }
+  .mode-card, .challenge-card, .pbtn, .pause-btn { transition: none; }
+  .overlay, .overlay.hidden, .overlay .panel,
+  #hud, #ammo, #reload-btn, #pause-btn, .toast { transition-duration: 0.01s, 0s; transition-delay: 0s; }
+  .overlay.hidden .panel { transform: none; }
 }
 
 /* Win / fail toast */
 .toast {
   position: absolute;
-  top: max(72px, calc(env(safe-area-inset-top) + 60px));
+  top: max(90px, calc(env(safe-area-inset-top) + 78px));
   left: 50%;
   transform: translateX(-50%);
   z-index: 30;
@@ -451,11 +563,17 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  animation: toast-in 0.35s ease;
+  opacity: 1;
+  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0s;
   box-shadow: 0 8px 24px rgba(0,0,0,0.35);
 }
 
-.toast.hidden { display: none; }
+.toast.hidden {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-50%) translateY(-10px);
+  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0s linear 0.25s;
+}
 
 .toast strong {
   font-size: 1.15rem;
@@ -477,17 +595,6 @@ html, body {
   background: linear-gradient(160deg, #ffe8e0, #f0a090);
   border: 3px solid #a02818;
   color: #5a1010;
-}
-
-@keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(-12px) scale(0.94);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0) scale(1);
-  }
 }
 
 @media (pointer: fine) {

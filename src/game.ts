@@ -22,6 +22,8 @@ const HS_KEY = 'chickenrun-highscore'
 const STREAK_NEEDED = 5
 const STREAK_BONUS = 50
 const GOLD_BONUS = 30
+const MENU_MSG = 'Pick a game and start hunting!'
+const VIEW_OUT_MS = 150
 
 export class Game {
   private canvas: HTMLCanvasElement
@@ -37,7 +39,9 @@ export class Game {
   private pointer = { x: 0, y: 0, active: false }
   private lastTs = 0
   private raf = 0
-  private autoReloadTimer: number | null = null
+  private autoReloadLeft: number | null = null // ms, counted down in update() so pause freezes it
+  private paused = false
+  private viewTimer: number | null = null
   private flash = 0
   private w = 0
   private h = 0
@@ -63,11 +67,17 @@ export class Game {
   private elChallengeList: HTMLElement
   private elChallengeProgress: HTMLElement
   private elToast: HTMLElement
+  private elApp: HTMLElement
+  private elViews: HTMLElement
+  private elPauseBtn: HTMLButtonElement
+  private elPauseOverlay: HTMLElement
+  private elPauseInfo: HTMLElement
+  private elResume: HTMLButtonElement
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
     const ctx = canvas.getContext('2d')
-    if (!ctx) throw new Error('Canvas 2D ni na voljo')
+    if (!ctx) throw new Error('Canvas 2D is not available')
     this.ctx = ctx
 
     this.elTimer = must('#timer')
@@ -82,6 +92,12 @@ export class Game {
     this.elChallengeList = must('#challenge-list')
     this.elChallengeProgress = must('#challenge-progress')
     this.elToast = must('#toast')
+    this.elApp = must('#app')
+    this.elViews = must('#views')
+    this.elPauseBtn = must('#pause-btn') as HTMLButtonElement
+    this.elPauseOverlay = must('#pause-overlay')
+    this.elPauseInfo = must('#pause-info')
+    this.elResume = must('#resume-btn') as HTMLButtonElement
 
     this.highScore =
       Number(
@@ -98,7 +114,7 @@ export class Game {
     this.resize()
     this.renderAmmo()
     this.renderChallengeList()
-    this.showMenu('Izberi igro in lovi!')
+    this.showMenu(MENU_MSG)
     this.loop(performance.now())
   }
 
@@ -120,14 +136,29 @@ export class Game {
       e.preventDefault()
       this.canvas.setPointerCapture(e.pointerId)
       move(e.clientX, e.clientY)
-      if (this.phase === 'playing') this.shoot()
+      if (this.phase === 'playing' && !this.paused) this.shoot()
     })
 
-    this.elBack.addEventListener('click', () => {
-      this.menuStep = 'modes'
-      this.renderChallengeList()
-    })
+    this.elBack.addEventListener('click', () => this.setMenuStep('modes'))
     this.elReload.addEventListener('click', () => this.reload())
+
+    this.elPauseBtn.addEventListener('click', () => this.pause())
+    this.elResume.addEventListener('click', () => this.resume())
+    must('#restart-btn').addEventListener('click', () => this.restart())
+    must('#quit-btn').addEventListener('click', () => this.quitToMenu())
+
+    // Auto-pause when the tab/app goes to the background
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.pause()
+    })
+    window.addEventListener('pagehide', () => this.pause())
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
+        if (this.paused) this.resume()
+        else this.pause()
+      }
+    })
 
     document.addEventListener('gesturestart', (e) => e.preventDefault())
   }
@@ -136,10 +167,6 @@ export class Game {
     this.stars = loadStars()
     const base = import.meta.env.BASE_URL
     const sprite = (n: string) => `${base}art/sprites/chicken-${n}.webp`
-    const inChallenges = this.menuStep === 'challenges'
-    this.elModeList.hidden = inChallenges
-    this.elChallengeList.hidden = !inChallenges
-    this.elBack.hidden = !inChallenges
     this.elModeList.innerHTML = ''
     this.elChallengeList.innerHTML = ''
 
@@ -158,8 +185,8 @@ export class Game {
         cls: 'mode-classic',
         icon: '🏆',
         img: sprite('brown'),
-        title: 'Klasično',
-        desc: '90 sekund lova — daljše kokoši dajo več točk!',
+        title: 'Classic',
+        desc: '90 seconds of hunting — far chickens are worth more!',
         badge: starString(this.stars.klasika || 0),
         run: () => this.pickChallenge('klasika'),
       },
@@ -167,20 +194,17 @@ export class Game {
         cls: 'mode-challenges',
         icon: '🎯',
         img: sprite('speckle'),
-        title: 'Izzivi',
-        desc: 'Tri posebne naloge z zvezdicami.',
+        title: 'Challenges',
+        desc: 'Three special missions with stars.',
         badge: `★ ${subStars}/${sub.length * 3}`,
-        run: () => {
-          this.menuStep = 'challenges'
-          this.renderChallengeList()
-        },
+        run: () => this.setMenuStep('challenges'),
       },
       {
         cls: 'mode-gold',
         icon: '⭐',
         img: sprite('gold'),
-        title: 'Zlati lov',
-        desc: 'Štejejo samo zlate kokoši. Doseži 100 točk!',
+        title: 'Golden Hunt',
+        desc: 'Only golden chickens count. Reach 100 points!',
         badge: starString(this.stars.zlata || 0),
         run: () => this.pickChallenge('zlata'),
       },
@@ -194,7 +218,7 @@ export class Game {
         <span class="mode-body">
           <span class="mode-title"><span class="mode-icon">${m.icon}</span> ${m.title}</span>
           <span class="mode-desc">${m.desc}</span>
-          <span class="mode-stars" aria-label="Zvezdice">${m.badge}</span>
+          <span class="mode-stars" aria-label="Stars">${m.badge}</span>
         </span>
         <span class="mode-go" aria-hidden="true">▶</span>
       `
@@ -213,13 +237,51 @@ export class Game {
         <span class="ch-body">
           <span class="ch-title">${c.title}</span>
           <span class="ch-desc">${c.desc}</span>
-          <span class="ch-stars" aria-label="Zvezdice">${starString(this.stars[c.id] || 0)}</span>
+          <span class="ch-stars" aria-label="Stars">${starString(this.stars[c.id] || 0)}</span>
         </span>
         <span class="mode-go" aria-hidden="true">▶</span>
       `
       btn.addEventListener('click', () => this.pickChallenge(c.id))
       this.elChallengeList.appendChild(btn)
     }
+  }
+
+  /** Switch between the mode list and the challenge sub-list with a short fade/slide. */
+  private setMenuStep(step: 'modes' | 'challenges', animate = true): void {
+    const from = this.menuStep
+    this.menuStep = step
+    if (this.viewTimer != null) {
+      clearTimeout(this.viewTimer)
+      this.viewTimer = null
+    }
+    const toChallenges = step === 'challenges'
+    const showEl = toChallenges ? this.elChallengeList : this.elModeList
+    const hideEl = toChallenges ? this.elModeList : this.elChallengeList
+    this.elViews.dataset.dir = toChallenges ? 'fwd' : 'back'
+
+    const enter = (): void => {
+      for (const el of [this.elModeList, this.elChallengeList, this.elBack]) {
+        el.classList.remove('view-out', 'view-in')
+      }
+      hideEl.hidden = true
+      showEl.hidden = false
+      this.elBack.hidden = !toChallenges
+      for (const el of toChallenges ? [showEl, this.elBack] : [showEl]) {
+        void el.offsetWidth // restart the CSS animation
+        el.classList.add('view-in')
+      }
+    }
+
+    if (!animate || from === step || hideEl.hidden || prefersReducedMotion()) {
+      enter()
+      return
+    }
+    hideEl.classList.add('view-out')
+    if (!toChallenges) this.elBack.classList.add('view-out')
+    this.viewTimer = window.setTimeout(() => {
+      this.viewTimer = null
+      enter()
+    }, VIEW_OUT_MS)
   }
 
   private pickChallenge(id: ChallengeId): void {
@@ -240,15 +302,68 @@ export class Game {
   }
 
   private showMenu(msg: string, isResult = false): void {
-    this.phase = this.score > 0 && this.timeLeft <= 0 ? 'over' : 'menu'
+    this.phase = isResult ? 'over' : 'menu'
+    this.paused = false
     this.elMsg.textContent = msg
     this.elHigh.textContent = String(this.highScore)
-    this.elMsg.classList.toggle('result', isResult)
-    this.menuStep = 'modes'
-    this.elOverlay.classList.remove('hidden')
-    this.elReload.hidden = true
-    this.elChallengeProgress.classList.add('hidden')
+    this.elMsg.classList.remove('result')
+    if (isResult) {
+      void this.elMsg.offsetWidth // replay the pop-in animation
+      this.elMsg.classList.add('result')
+    }
     this.renderChallengeList()
+    this.setMenuStep('modes', false)
+    this.setPlayingUi(false)
+    this.setOverlay(this.elPauseOverlay, false)
+    this.setOverlay(this.elOverlay, true)
+  }
+
+  /** Show/hide an overlay (CSS fades it); hidden overlays are inert for keyboard/AT. */
+  private setOverlay(el: HTMLElement, visible: boolean): void {
+    el.classList.toggle('hidden', !visible)
+    el.toggleAttribute('inert', !visible)
+    el.setAttribute('aria-hidden', String(!visible))
+  }
+
+  /** Fade in/out the in-play UI (HUD, ammo, reload, pause button). */
+  private setPlayingUi(on: boolean): void {
+    this.elApp.classList.toggle('playing', on)
+    this.elChallengeProgress.classList.toggle('hidden', !on)
+  }
+
+  private pause(): void {
+    if (this.phase !== 'playing' || this.paused) return
+    this.paused = true
+    const t = Math.max(0, Math.ceil(this.timeLeft))
+    const mm = String(Math.floor(t / 60)).padStart(2, '0')
+    const ss = String(t % 60).padStart(2, '0')
+    this.elPauseInfo.textContent = `${this.challenge.title} · Score ${this.score} · Time ${mm}:${ss}`
+    this.setOverlay(this.elPauseOverlay, true)
+    this.elResume.focus({ preventScroll: true })
+  }
+
+  private resume(): void {
+    if (!this.paused) return
+    this.paused = false
+    this.lastTs = 0
+    this.setOverlay(this.elPauseOverlay, false)
+    ;(document.activeElement as HTMLElement | null)?.blur()
+  }
+
+  private restart(): void {
+    if (!this.paused) return
+    this.setOverlay(this.elPauseOverlay, false)
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    this.startRound()
+  }
+
+  /** Leave the round without a result: no win, no stars, no high score. */
+  private quitToMenu(): void {
+    if (this.phase !== 'playing') return
+    this.clearAutoReload()
+    this.hideToast()
+    this.showMenu(MENU_MSG)
+    ;(document.activeElement as HTMLElement | null)?.blur()
   }
 
   private startRound(): void {
@@ -266,9 +381,10 @@ export class Game {
     this.clearAutoReload()
     this.hideToast()
     this.phase = 'playing'
-    this.elOverlay.classList.add('hidden')
-    this.elReload.hidden = false
-    this.elChallengeProgress.classList.remove('hidden')
+    this.paused = false
+    this.setOverlay(this.elOverlay, false)
+    this.setOverlay(this.elPauseOverlay, false)
+    this.setPlayingUi(true)
     this.updateHud()
     this.renderAmmo()
     const opts = {
@@ -288,6 +404,7 @@ export class Game {
   private endRound(won: boolean, reason: string): void {
     this.phase = 'over'
     this.clearAutoReload()
+    this.paused = false
     if (this.score > this.highScore) {
       this.highScore = this.score
       localStorage.setItem(HS_KEY, String(this.highScore))
@@ -303,13 +420,13 @@ export class Game {
       saveStar(this.challenge.id, stars)
       this.showToast(
         'win',
-        `Zmaga! ${reason}`,
-        `${starString(stars)}  ·  ${this.score} točk`,
+        `Victory! ${reason}`,
+        `${starString(stars)}  ·  ${this.score} points`,
       )
-      this.showMenu(`🎉 Bravo! ${reason} Rezultat: ${this.score}`, true)
+      this.showMenu(`🎉 Well done! ${reason} Score: ${this.score}`, true)
     } else {
-      this.showToast('fail', `Žal … ${reason}`, `Rezultat: ${this.score}`)
-      this.showMenu(`Konec! ${reason} Rezultat: ${this.score}`, true)
+      this.showToast('fail', `Oh no … ${reason}`, `Score: ${this.score}`)
+      this.showMenu(`Game over! ${reason} Score: ${this.score}`, true)
     }
   }
 
@@ -317,29 +434,29 @@ export class Game {
     const c = this.challenge
 
     if (c.id === 'klasika') {
-      this.endRound(true, 'Čas je potekel!')
+      this.endRound(true, "Time's up!")
       return
     }
 
     if (c.surviveFull) {
       if (this.score >= (c.scoreGoal ?? 0)) {
-        this.endRound(true, `Preživel si z ${this.score} točkami!`)
+        this.endRound(true, `You survived with ${this.score} points!`)
       } else {
         this.endRound(
           false,
-          `Potreboval si ${c.scoreGoal} točk, imel pa ${this.score}.`,
+          `You needed ${c.scoreGoal} points but got ${this.score}.`,
         )
       }
       return
     }
 
     if (c.catchGoal && this.caught >= c.catchGoal) {
-      this.endRound(true, `Ujel si ${this.caught} kokoši!`)
+      this.endRound(true, `You caught ${this.caught} chickens!`)
       return
     }
 
     if (c.scoreGoal && this.score >= c.scoreGoal) {
-      this.endRound(true, `Dosegel si ${this.score} točk!`)
+      this.endRound(true, `You reached ${this.score} points!`)
       return
     }
 
@@ -347,15 +464,15 @@ export class Game {
     if (c.catchGoal) {
       this.endRound(
         false,
-        `Ujel si le ${this.caught}/${c.catchGoal} kokoši.`,
+        `You caught only ${this.caught}/${c.catchGoal} chickens.`,
       )
     } else if (c.scoreGoal) {
       this.endRound(
         false,
-        `Imel si ${this.score}/${c.scoreGoal} točk.`,
+        `You had ${this.score}/${c.scoreGoal} points.`,
       )
     } else {
-      this.endRound(true, 'Čas je potekel!')
+      this.endRound(true, "Time's up!")
     }
   }
 
@@ -365,11 +482,11 @@ export class Game {
     if (c.surviveFull) return // must wait for timer
 
     if (c.catchGoal && this.caught >= c.catchGoal) {
-      this.endRound(true, `Ujel si ${this.caught} kokoši!`)
+      this.endRound(true, `You caught ${this.caught} chickens!`)
       return
     }
     if (c.scoreGoal && !c.surviveFull && this.score >= c.scoreGoal) {
-      this.endRound(true, `Dosegel si ${this.score} točk!`)
+      this.endRound(true, `You reached ${this.score} points!`)
     }
   }
 
@@ -457,7 +574,7 @@ export class Game {
           this.floaters.push({
             x: best.x,
             y: best.y - 48,
-            text: `NIZ! +${STREAK_BONUS}`,
+            text: `STREAK! +${STREAK_BONUS}`,
             life: 1.05,
             vy: -72,
             color: '#7dffb3',
@@ -469,7 +586,7 @@ export class Game {
         this.floaters.push({
           x: best.x,
           y: best.y - 20,
-          text: 'ne šteje',
+          text: 'no points',
           life: 0.8,
           vy: -50,
           color: '#ffccaa',
@@ -481,7 +598,7 @@ export class Game {
       this.streak = 0
       this.misses++
       if (this.challenge.noMiss) {
-        this.endRound(false, 'Zgrešena strela! Izziv ni uspel.')
+        this.endRound(false, 'Missed shot! Challenge failed.')
         return
       }
     }
@@ -494,23 +611,15 @@ export class Game {
   private reload(): void {
     this.ammo = MAX_AMMO
     this.clearAutoReload()
-    // Keep reload visible while playing; hide only on menu/over
-    if (this.phase !== 'playing') this.elReload.hidden = true
     this.renderAmmo()
   }
 
   private scheduleAutoReload(): void {
-    this.clearAutoReload()
-    this.autoReloadTimer = window.setTimeout(() => {
-      if (this.phase === 'playing' && this.ammo <= 0) this.reload()
-    }, AUTO_RELOAD_MS)
+    this.autoReloadLeft = AUTO_RELOAD_MS
   }
 
   private clearAutoReload(): void {
-    if (this.autoReloadTimer != null) {
-      clearTimeout(this.autoReloadTimer)
-      this.autoReloadTimer = null
-    }
+    this.autoReloadLeft = null
   }
 
   private updateHud(): void {
@@ -524,7 +633,7 @@ export class Game {
     let prog = c.title
     if (c.catchGoal) prog += ` · ${this.caught}/${c.catchGoal}`
     else if (c.scoreGoal) prog += ` · ${this.score}/${c.scoreGoal}`
-    if (c.noMiss) prog += ` · zgrešeno: ${this.misses}`
+    if (c.noMiss) prog += ` · misses: ${this.misses}`
     this.elChallengeProgress.textContent = prog
   }
 
@@ -547,10 +656,19 @@ export class Game {
   }
 
   private update(dt: number): void {
+    // Paused: freeze timer, spawns, chicken movement, floaters and auto-reload
+    if (this.paused) return
     this.elapsed += dt
     if (this.flash > 0) this.flash = Math.max(0, this.flash - dt)
 
     if (this.phase === 'playing') {
+      if (this.autoReloadLeft != null) {
+        this.autoReloadLeft -= dt * 1000
+        if (this.autoReloadLeft <= 0) {
+          this.autoReloadLeft = null
+          if (this.ammo <= 0) this.reload()
+        }
+      }
       this.timeLeft -= dt
       if (this.timeLeft <= 0) {
         this.timeLeft = 0
@@ -675,8 +793,12 @@ function drawCrosshair(
   ctx.restore()
 }
 
+function prefersReducedMotion(): boolean {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
 function must(sel: string): HTMLElement {
   const el = document.querySelector(sel)
-  if (!el) throw new Error(`Manjka element ${sel}`)
+  if (!el) throw new Error(`Missing element ${sel}`)
   return el as HTMLElement
 }

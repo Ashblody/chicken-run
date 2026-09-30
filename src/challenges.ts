@@ -3,23 +3,23 @@ import type { ChallengeDef, ChallengeId } from './types'
 export const CHALLENGES: ChallengeDef[] = [
   {
     id: 'klasika',
-    title: 'Klasično',
-    desc: '90 sekund — oddaljene kokoši = več točk!',
+    title: 'Classic',
+    desc: '90 seconds — far chickens are worth more points!',
     icon: '🏆',
     duration: 90,
   },
   {
     id: 'ujeni20',
-    title: 'Ujeni 20 kokoši',
-    desc: 'Ujemi 20 kokoši v 90 sekundah.',
+    title: 'Catch 20 Chickens',
+    desc: 'Catch 20 chickens in 90 seconds.',
     icon: '🐔',
     duration: 90,
     catchGoal: 20,
   },
   {
     id: 'zlata',
-    title: 'Samo zlata kokoš',
-    desc: 'Samo zlate štejejo — točke po razdalji + zlati bonus. Doseži 100!',
+    title: 'Golden Hunt',
+    desc: 'Only golden chickens count — distance points plus gold bonus. Reach 100!',
     icon: '⭐',
     duration: 90,
     scoreGoal: 100,
@@ -28,8 +28,8 @@ export const CHALLENGES: ChallengeDef[] = [
   },
   {
     id: 'natancno',
-    title: 'Brez zgrešenih',
-    desc: 'Nobene zgrešene strele! Ujemi 12 kokoši.',
+    title: 'No Misses',
+    desc: 'No missed shots! Catch 12 chickens.',
     icon: '🎯',
     duration: 90,
     catchGoal: 12,
@@ -37,8 +37,8 @@ export const CHALLENGES: ChallengeDef[] = [
   },
   {
     id: 'prezivi',
-    title: 'Preživi 90s',
-    desc: 'Do konca časa zberi vsaj 200 točk.',
+    title: 'Survive 90s',
+    desc: 'Score at least 200 points before time runs out.',
     icon: '⏱️',
     duration: 90,
     scoreGoal: 200,
@@ -46,6 +46,7 @@ export const CHALLENGES: ChallengeDef[] = [
   },
 ]
 
+// Note: challenge ids are internal (used for saved stars); they are never shown to players.
 const STARS_KEY = 'chickenrun-challenge-stars'
 
 export function loadStars(): Record<ChallengeId, number> {
