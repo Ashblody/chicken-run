@@ -21,6 +21,8 @@ import {
   spawnGroundChicken,
   updateChicken,
 } from './chicken'
+import { sfx } from './audio'
+import { Particles } from './particles'
 import type { ChallengeDef, ChallengeId, Chicken, Floater, GamePhase } from './types'
 
 const MAX_AMMO = 5
@@ -50,6 +52,8 @@ export class Game {
   private paused = false
   private viewTimer: number | null = null
   private flash = 0
+  private particles = new Particles()
+  private shake = 0
   private w = 0
   private h = 0
   private elapsed = 0
@@ -80,6 +84,7 @@ export class Game {
   private elPauseOverlay: HTMLElement
   private elPauseInfo: HTMLElement
   private elResume: HTMLButtonElement
+  private elMute: HTMLButtonElement
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
@@ -105,6 +110,7 @@ export class Game {
     this.elPauseOverlay = must('#pause-overlay')
     this.elPauseInfo = must('#pause-info')
     this.elResume = must('#resume-btn') as HTMLButtonElement
+    this.elMute = must('#mute-btn') as HTMLButtonElement
 
     this.highScore =
       Number(
@@ -117,6 +123,7 @@ export class Game {
     }
     this.elHigh.textContent = String(this.highScore)
 
+    this.renderMute()
     this.bind()
     this.resize()
     this.renderAmmo()
@@ -146,6 +153,18 @@ export class Game {
       if (this.phase === 'playing' && !this.paused) this.shoot()
     })
 
+    // Generic UI tap sound for buttons that have no sound of their own
+    this.elApp.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest('button')
+      if (!b || b.id === 'mute-btn' || b.id === 'reload-btn' || b.id === 'pause-btn' || b.id === 'resume-btn') return
+      sfx.tap()
+    })
+    this.elMute.addEventListener('click', () => {
+      sfx.setMuted(!sfx.isMuted())
+      this.renderMute()
+      if (!sfx.isMuted()) sfx.tap()
+    })
+
     this.elBack.addEventListener('click', () => this.setMenuStep('modes'))
     this.elReload.addEventListener('click', () => this.reload())
 
@@ -168,6 +187,14 @@ export class Game {
     })
 
     document.addEventListener('gesturestart', (e) => e.preventDefault())
+  }
+
+  private renderMute(): void {
+    const m = sfx.isMuted()
+    this.elMute.classList.toggle('muted', m)
+    this.elMute.setAttribute('aria-pressed', String(m))
+    this.elMute.setAttribute('aria-label', m ? 'Sound off (tap to turn on)' : 'Sound on (tap to mute)')
+    this.elMute.title = m ? 'Sound off' : 'Sound on'
   }
 
   private renderChallengeList(): void {
@@ -311,6 +338,7 @@ export class Game {
   private showMenu(msg: string, isResult = false): void {
     this.phase = isResult ? 'over' : 'menu'
     this.paused = false
+    if (!isResult) this.particles.clear()
     this.elMsg.textContent = msg
     this.elHigh.textContent = String(this.highScore)
     this.elMsg.classList.remove('result')
@@ -341,6 +369,7 @@ export class Game {
   private pause(): void {
     if (this.phase !== 'playing' || this.paused) return
     this.paused = true
+    if (!document.hidden) sfx.pause()
     const t = Math.max(0, Math.ceil(this.timeLeft))
     const mm = String(Math.floor(t / 60)).padStart(2, '0')
     const ss = String(t % 60).padStart(2, '0')
@@ -352,6 +381,7 @@ export class Game {
   private resume(): void {
     if (!this.paused) return
     this.paused = false
+    sfx.resume()
     this.lastTs = 0
     this.setOverlay(this.elPauseOverlay, false)
     ;(document.activeElement as HTMLElement | null)?.blur()
@@ -376,6 +406,8 @@ export class Game {
   private startRound(): void {
     this.chickens = []
     this.floaters = []
+    this.particles.clear()
+    this.shake = 0
     this.score = 0
     this.caught = 0
     this.misses = 0
@@ -428,6 +460,7 @@ export class Game {
         this.misses,
       )
       saveStar(this.challenge.id, stars)
+      sfx.win(0.3)
       this.showToast(
         'win',
         `Victory! ${reason}`,
@@ -435,6 +468,7 @@ export class Game {
       )
       this.showMenu(`🎉 Well done! ${reason} Score: ${this.score}`, true)
     } else {
+      sfx.over(0.3)
       this.showToast('fail', `Oh no … ${reason}`, `Score: ${this.score}`)
       this.showMenu(`Game over! ${reason} Score: ${this.score}`, true)
     }
@@ -524,9 +558,12 @@ export class Game {
     if (this.ammo <= 0) {
       // Reload stays visible during play; nudge auto-reload if empty
       this.scheduleAutoReload()
+      sfx.empty()
       return
     }
     this.ammo--
+    sfx.shot()
+    this.particles.puff(this.pointer.x, this.pointer.y, this.fxAmount(false))
     this.flash = 0.08
     this.renderAmmo()
 
@@ -546,6 +583,18 @@ export class Game {
     if (best) {
       best.state = 'hit'
       best.hitT = 0
+      const hc = chickenCenter(best)
+      const isGold = isGoldChicken(best)
+      this.particles.hit(hc.x, hc.y, isGold, Math.min(1.5, Math.max(0.6, best.layer.scale)), this.fxAmount(true))
+      sfx.hit()
+      if (navigator.vibrate && !prefersReducedMotion()) {
+        try {
+          navigator.vibrate(15)
+        } catch {
+          /* unsupported */
+        }
+      }
+      if (isGold && !prefersReducedMotion()) this.shake = 0.22
 
       const gold = isGoldChicken(best)
       const countsForGold = !this.challenge.goldOnly || gold
@@ -565,6 +614,7 @@ export class Game {
           this.ammo = MAX_AMMO
           this.clearAutoReload()
           this.renderAmmo()
+          sfx.gold()
         }
 
         this.score += pts
@@ -589,6 +639,7 @@ export class Game {
             vy: -72,
             color: '#7dffb3',
           })
+          sfx.streak()
           this.streak = 0
         }
       } else {
@@ -620,6 +671,7 @@ export class Game {
   }
 
   private reload(): void {
+    sfx.reload()
     this.ammo = MAX_AMMO
     this.clearAutoReload()
     this.renderAmmo()
@@ -671,6 +723,8 @@ export class Game {
     if (this.paused) return
     this.elapsed += dt
     if (this.flash > 0) this.flash = Math.max(0, this.flash - dt)
+    if (this.shake > 0) this.shake = Math.max(0, this.shake - dt)
+    this.particles.update(dt)
 
     if (this.phase === 'playing') {
       if (this.autoReloadLeft != null) {
@@ -750,6 +804,11 @@ export class Game {
 
   private draw(): void {
     const { ctx, w, h } = this
+    ctx.save()
+    if (this.shake > 0) {
+      const a = (this.shake / 0.22) * 3 // max 3px, decays
+      ctx.translate((Math.random() - 0.5) * 2 * a, (Math.random() - 0.5) * 2 * a)
+    }
     drawBackground(ctx, w, h, this.elapsed * 1000)
 
     // Painter's order: sky chickens (far first) and ground chickens sorted by feet y.
@@ -776,6 +835,9 @@ export class Game {
       ctx.restore()
     }
 
+    this.particles.draw(ctx)
+    ctx.restore()
+
     if (this.flash > 0) {
       ctx.fillStyle = `rgba(255,240,180,${this.flash * 2})`
       ctx.beginPath()
@@ -786,6 +848,12 @@ export class Game {
     if (this.phase === 'playing' || this.pointer.active) {
       drawCrosshair(ctx, this.pointer.x, this.pointer.y, this.ammo > 0)
     }
+  }
+
+  /** Particle amount multiplier (reduced motion = very few / none). */
+  private fxAmount(hit: boolean): number {
+    if (prefersReducedMotion()) return hit ? 0.3 : 0
+    return 1
   }
 
   destroy(): void {

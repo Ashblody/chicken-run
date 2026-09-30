@@ -20,6 +20,14 @@
       <button id="pause-btn" class="pause-btn" type="button" aria-label="Pause" title="Pause (Esc)">
         <span class="pause-icon" aria-hidden="true"></span>
       </button>
+      <button id="mute-btn" class="mute-btn" type="button" aria-label="Sound on (tap to mute)" aria-pressed="false" title="Sound">
+        <svg class="mute-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path class="spk" d="M3 9.5v5h4l5 4v-13l-5 4z" fill="#fff" />
+          <path class="wave w1" d="M15.5 9a4.5 4.5 0 0 1 0 6" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" />
+          <path class="wave w2" d="M18 6.5a8 8 0 0 1 0 11" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" />
+          <path class="cross" d="M15.5 9.5l6 5M21.5 9.5l-6 5" fill="none" stroke="#ff8a7a" stroke-width="2.2" stroke-linecap="round" />
+        </svg>
+      </button>
       <div id="ammo"></div>
       <button id="reload-btn" type="button">Reload</button>
       <div id="toast" class="toast hidden" role="status"></div>

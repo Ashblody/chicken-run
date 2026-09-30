@@ -175,6 +175,33 @@ html, body {
   border-right: 5px solid #fff;
 }
 
+/* Mute button: top-right corner in the menu; slides next to the pause button while playing */
+.mute-btn {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  left: calc(100% - 42px - max(14px, env(safe-area-inset-right)));
+  width: 42px;
+  height: 42px;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(255, 220, 120, 0.6);
+  border-radius: 50%;
+  background: linear-gradient(180deg, rgba(40, 30, 10, 0.6), rgba(20, 15, 5, 0.5));
+  cursor: pointer;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.25);
+  pointer-events: auto;
+  transition: left 0.25s ease, transform 0.12s ease;
+}
+#app.playing .mute-btn { left: calc(50% + 29px); }
+.mute-btn:active { transform: translateY(2px); }
+.mute-btn:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+.mute-btn .cross { display: none; }
+.mute-btn.muted .cross { display: inline; }
+.mute-btn.muted .wave { display: none; }
+.mute-btn.muted { opacity: 0.85; }
+
 #reload-btn:active {
   transform: translateX(-50%) translateY(2px);
   box-shadow: 0 2px 0 #8a5a10;
@@ -541,7 +568,7 @@ html, body {
 
 @media (prefers-reduced-motion: reduce) {
   .view-in, .view-out, #overlay-msg.result, .toast { animation: none; }
-  .mode-card, .challenge-card, .pbtn, .pause-btn { transition: none; }
+  .mode-card, .challenge-card, .pbtn, .pause-btn, .mute-btn { transition: none; }
   .overlay, .overlay.hidden, .overlay .panel,
   #hud, #ammo, #reload-btn, #pause-btn, .toast { transition-duration: 0.01s, 0s; transition-delay: 0s; }
   .overlay.hidden .panel { transform: none; }
