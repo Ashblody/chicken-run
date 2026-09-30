@@ -8,10 +8,17 @@ import {
   starsForClear,
 } from './challenges'
 import {
+  MAX_AIR,
+  MAX_GROUND,
+  GROUND_SHARE,
+  chickenCenter,
   chickenHitRadius,
   drawChicken,
   isGoldChicken,
+  isTargetable,
+  spawnAirChicken,
   spawnChicken,
+  spawnGroundChicken,
   updateChicken,
 } from './chicken'
 import type { ChallengeDef, ChallengeId, Chicken, Floater, GamePhase } from './types'
@@ -391,12 +398,15 @@ export class Game {
       goldBoost: this.challenge.goldBoost ?? 0,
       forceGoldLayer: false,
     }
-    for (let i = 0; i < 4; i++) {
+    // Opening wave: 3 flyers + 2 walkers already on screen
+    for (let i = 0; i < 5; i++) {
+      const o = {
+        ...opts,
+        onScreen: true,
+        forceGoldLayer: !!this.challenge.goldOnly && i % 2 === 0,
+      }
       this.chickens.push(
-        spawnChicken(this.w, this.h, {
-          ...opts,
-          forceGoldLayer: !!this.challenge.goldOnly && i % 2 === 0,
-        }),
+        i < 3 ? spawnAirChicken(this.w, this.h, o) : spawnGroundChicken(this.w, this.h, o),
       )
     }
   }
@@ -523,10 +533,9 @@ export class Game {
     let best: Chicken | null = null
     let bestDist = Infinity
     for (const c of this.chickens) {
-      if (c.state !== 'flying') continue
-      const dx = c.x - this.pointer.x
-      const dy = c.y - this.pointer.y
-      const d = Math.hypot(dx, dy)
+      if (!isTargetable(c)) continue
+      const ctr = chickenCenter(c)
+      const d = Math.hypot(ctr.x - this.pointer.x, ctr.y - this.pointer.y)
       const r = chickenHitRadius(c)
       if (d <= r && d < bestDist) {
         best = c
@@ -543,7 +552,7 @@ export class Game {
 
       if (countsForGold) {
         this.caught++
-        const distPts = best.layer.points
+        const distPts = best.points
         let pts = distPts
         let floaterText = `+${distPts}`
         let floaterColor = '#fff'
@@ -559,9 +568,10 @@ export class Game {
         }
 
         this.score += pts
+        const fc = chickenCenter(best)
         this.floaters.push({
-          x: best.x,
-          y: best.y - 20,
+          x: fc.x,
+          y: fc.y - 20,
           text: floaterText,
           life: 0.9,
           vy: -60,
@@ -572,8 +582,8 @@ export class Game {
         if (this.streak >= STREAK_NEEDED) {
           this.score += STREAK_BONUS
           this.floaters.push({
-            x: best.x,
-            y: best.y - 48,
+            x: fc.x,
+            y: fc.y - 48,
             text: `STREAK! +${STREAK_BONUS}`,
             life: 1.05,
             vy: -72,
@@ -583,9 +593,10 @@ export class Game {
         }
       } else {
         // Hit non-gold in gold-only mode — no points, mild feedback
+        const nc = chickenCenter(best)
         this.floaters.push({
-          x: best.x,
-          y: best.y - 20,
+          x: nc.x,
+          y: nc.y - 20,
           text: 'no points',
           life: 0.8,
           vy: -50,
@@ -682,31 +693,34 @@ export class Game {
       const interval = Math.max(0.4, 1.05 - this.elapsed * 0.008)
       while (this.spawnAcc >= interval) {
         this.spawnAcc -= interval
-        if (this.chickens.filter((c) => c.state === 'flying').length < 10) {
-          this.chickens.push(
-            spawnChicken(this.w, this.h, {
-              goldBoost: this.challenge.goldBoost ?? 0,
-              forceGoldLayer:
-                !!this.challenge.goldOnly && Math.random() < 0.55,
-            }),
-          )
-        }
+        this.spawnOne({
+          goldBoost: this.challenge.goldBoost ?? 0,
+          forceGoldLayer: !!this.challenge.goldOnly && Math.random() < 0.55,
+        })
       }
     } else if (this.phase === 'menu' || this.phase === 'over') {
       this.spawnAcc += dt
       if (this.spawnAcc > 1.2) {
         this.spawnAcc = 0
-        if (this.chickens.filter((c) => c.state === 'flying').length < 5) {
-          this.chickens.push(spawnChicken(this.w, this.h))
+        const air = this.chickens.filter((c) => c.domain === 'air').length
+        const ground = this.chickens.filter((c) => c.domain === 'ground').length
+        if (air + ground < 6) {
+          this.chickens.push(
+            ground < 2 && Math.random() < 0.4
+              ? spawnGroundChicken(this.w, this.h)
+              : air < 4
+                ? spawnChicken(this.w, this.h)
+                : spawnGroundChicken(this.w, this.h),
+          )
         }
       }
     }
 
-    for (const c of this.chickens) updateChicken(c, dt, this.h)
+    for (const c of this.chickens) updateChicken(c, dt, this.w, this.h)
     this.chickens = this.chickens.filter((c) => {
       if (c.state === 'gone') return false
-      if (c.state === 'flying') {
-        const m = 100 * c.layer.scale
+      if (c.state === 'flying' || c.state === 'walking' || c.state === 'pecking') {
+        const m = 130 * c.layer.scale
         if (c.facing === 1 && c.x > this.w + m) return false
         if (c.facing === -1 && c.x < -m) return false
       }
@@ -720,14 +734,34 @@ export class Game {
     this.floaters = this.floaters.filter((f) => f.life > 0)
   }
 
+  /** Spawn one chicken: ~65% air / ~35% ground, respecting the on-screen caps. */
+  private spawnOne(opts: { goldBoost: number; forceGoldLayer: boolean }): void {
+    const air = this.chickens.filter((c) => c.domain === 'air' && c.state === 'flying').length
+    const ground = this.chickens.filter((c) => c.domain === 'ground' && isTargetable(c)).length
+    const wantGround = Math.random() < GROUND_SHARE
+    if (wantGround && ground < MAX_GROUND) {
+      this.chickens.push(spawnGroundChicken(this.w, this.h, opts))
+    } else if (air < MAX_AIR) {
+      this.chickens.push(spawnAirChicken(this.w, this.h, opts))
+    } else if (ground < MAX_GROUND) {
+      this.chickens.push(spawnGroundChicken(this.w, this.h, opts))
+    }
+  }
+
   private draw(): void {
     const { ctx, w, h } = this
     drawBackground(ctx, w, h, this.elapsed * 1000)
 
-    const sorted = [...this.chickens].sort(
-      (a, b) => a.layer.scale - b.layer.scale,
-    )
-    for (const c of sorted) drawChicken(ctx, c)
+    // Painter's order: sky chickens (far first) and ground chickens sorted by feet y.
+    // Air chickens sit above the horizon; ground ones are drawn after so nearer rows overlap farther ones.
+    const air = this.chickens
+      .filter((c) => c.domain === 'air')
+      .sort((a, b) => a.layer.scale - b.layer.scale)
+    const ground = this.chickens
+      .filter((c) => c.domain === 'ground')
+      .sort((a, b) => a.baseY - b.baseY)
+    for (const c of air) drawChicken(ctx, c, h)
+    for (const c of ground) drawChicken(ctx, c, h)
 
     for (const f of this.floaters) {
       ctx.save()

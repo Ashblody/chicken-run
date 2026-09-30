@@ -1,21 +1,51 @@
-import type { Chicken, ChickenPalette, DepthLayer } from './types'
+import type { Chicken, ChickenPalette, DepthLayer, SpriteKey } from './types'
 
+/** Sky layers for flying chickens. Farther (smaller scale) = more points. */
 export const LAYERS: DepthLayer[] = [
-  // Farther (smaller scale) = more points; closer = fewer
   { scale: 0.45, speed: 55, points: 50, yMin: 0.28, yMax: 0.42 },
   { scale: 0.7, speed: 90, points: 25, yMin: 0.35, yMax: 0.5 },
   { scale: 1.0, speed: 130, points: 10, yMin: 0.45, yMax: 0.58 },
   { scale: 1.35, speed: 170, points: 5, yMin: 0.52, yMax: 0.62 },
 ]
 
+/** Ground rows (feet y as a fraction of the canvas height). Farther row = smaller = more points. */
+export const GROUND_ROWS: DepthLayer[] = [
+  { scale: 0.62, speed: 28, points: 0, yMin: 0.66, yMax: 0.66 },
+  { scale: 0.8, speed: 38, points: 0, yMin: 0.73, yMax: 0.73 },
+  { scale: 1.0, speed: 50, points: 0, yMin: 0.8, yMax: 0.8 },
+]
+
+/** Base points per ground kind, indexed by ground row (far, mid, near). */
+const GROUND_POINTS = {
+  hen: [25, 20, 15],
+  rooster: [30, 25, 20],
+  crossbow: [50, 45, 40],
+} as const
+
+export const MAX_AIR = 10
+export const MAX_GROUND = 4
+export const GROUND_SHARE = 0.35
+
 const ART_BASE = `${import.meta.env.BASE_URL}art/sprites/`
 
-const SPRITE_FILES: Record<ChickenPalette, string> = {
-  white: 'chicken-white.webp',
-  brown: 'chicken-brown.webp',
-  ginger: 'chicken-brown.webp',
-  speckle: 'chicken-speckle.webp',
-  gold: 'chicken-gold.webp',
+interface SpriteInfo {
+  file: string
+  /** natural width / height of the webp */
+  aspect: number
+  /** direction the artwork faces (1 = right, -1 = left) */
+  native: 1 | -1
+  /** ground: height relative to the row height unit */
+  hFactor: number
+}
+
+const SPRITES: Record<SpriteKey, SpriteInfo> = {
+  'fly-white': { file: 'fly-white.webp', aspect: 512 / 488, native: 1, hFactor: 1 },
+  'fly-speckled': { file: 'fly-speckled.webp', aspect: 512 / 416, native: -1, hFactor: 1 },
+  'fly-golden': { file: 'fly-golden.webp', aspect: 512 / 288, native: 1, hFactor: 1 },
+  'hen-speckled': { file: 'hen-speckled.webp', aspect: 377 / 417, native: 1, hFactor: 0.82 },
+  'hen-golden': { file: 'hen-golden.webp', aspect: 339 / 443, native: 1, hFactor: 0.82 },
+  'rooster-white': { file: 'rooster-white.webp', aspect: 378 / 512, native: 1, hFactor: 1 },
+  'rooster-crossbow': { file: 'rooster-crossbow.webp', aspect: 489 / 512, native: 1, hFactor: 0.92 },
 }
 
 const spriteCache = new Map<string, HTMLImageElement>()
@@ -34,15 +64,15 @@ function loadSprite(file: string): HTMLImageElement {
   return img
 }
 
-function getSprite(palette: ChickenPalette): HTMLImageElement | null {
-  const file = SPRITE_FILES[palette]
+function getSprite(key: SpriteKey): HTMLImageElement | null {
+  const file = SPRITES[key].file
   const img = loadSprite(file)
   if (spriteReady.get(file) && img.naturalWidth > 0) return img
   return null
 }
 
-// Warm-load all variants early
-;(['white', 'brown', 'speckle', 'gold'] as const).forEach((p) => loadSprite(SPRITE_FILES[p]))
+// Warm-load everything early
+;(Object.keys(SPRITES) as SpriteKey[]).forEach((k) => loadSprite(SPRITES[k].file))
 
 const PALETTES: Record<
   ChickenPalette,
@@ -92,184 +122,327 @@ const PALETTES: Record<
 
 let nextId = 1
 
-function pickPalette(goldBoost = 0, forceGold = false): ChickenPalette {
-  // Gold is a palette/special — not tied to any depth layer
-  if (forceGold) return 'gold'
-  const goldChance =
-    goldBoost > 0 ? Math.min(0.9, 0.2 + goldBoost) : 0.1
-  if (Math.random() < goldChance) return 'gold'
-  const pool: ChickenPalette[] = ['brown', 'ginger', 'white', 'speckle', 'ginger', 'brown']
-  return pool[Math.floor(Math.random() * pool.length)]!
+export interface SpawnOpts {
+  goldBoost?: number
+  forceGoldLayer?: boolean
+  /** Start already on screen (used for the first chickens of a round). */
+  onScreen?: boolean
 }
 
-export function spawnChicken(
-  w: number,
-  h: number,
-  opts?: { goldBoost?: number; forceGoldLayer?: boolean },
-): Chicken {
-  // forceGoldLayer = force gold *palette* on a random distance layer (not the old close/high-point layer)
-  const layer = LAYERS[Math.floor(Math.random() * LAYERS.length)]!
-  const forceGold =
-    !!opts?.forceGoldLayer ||
-    (!!opts?.goldBoost && Math.random() < opts.goldBoost)
-  const facing: 1 | -1 = Math.random() < 0.5 ? 1 : -1
-  const speed = layer.speed * (0.85 + Math.random() * 0.35)
-  const y = h * (layer.yMin + Math.random() * (layer.yMax - layer.yMin))
-  const margin = 80 * layer.scale
-  const x = facing === 1 ? -margin : w + margin
+function wantsGold(opts?: SpawnOpts): boolean {
+  if (opts?.forceGoldLayer) return true
+  const boost = opts?.goldBoost ?? 0
+  if (boost > 0) return Math.random() < Math.min(0.9, 0.2 + boost) || Math.random() < boost
+  return Math.random() < 0.1
+}
+
+function baseChicken() {
   return {
+    turned: false,
     id: nextId++,
-    x,
-    y,
-    vx: facing * speed,
-    facing,
-    layer,
-    state: 'flying',
     flap: Math.random() * Math.PI * 2,
     hitT: 0,
     fallVy: 0,
     poofT: 0,
     wobble: Math.random() * Math.PI * 2,
-    palette: pickPalette(opts?.goldBoost ?? 0, forceGold),
+    walkPhase: Math.random() * Math.PI * 2,
+    pauseT: 0,
+    nextPauseT: 0,
   }
 }
 
-export function updateChicken(c: Chicken, dt: number, h: number): void {
+/** Flying chicken crossing the sky. */
+export function spawnAirChicken(w: number, h: number, opts?: SpawnOpts): Chicken {
+  const layer = LAYERS[Math.floor(Math.random() * LAYERS.length)]!
+  const gold = wantsGold(opts)
+  const palette: ChickenPalette = gold ? 'gold' : Math.random() < 0.5 ? 'white' : 'speckle'
+  const sprite: SpriteKey = gold ? 'fly-golden' : palette === 'white' ? 'fly-white' : 'fly-speckled'
+  const facing: 1 | -1 = Math.random() < 0.5 ? 1 : -1
+  const speed = layer.speed * (0.85 + Math.random() * 0.35)
+  const y = h * (layer.yMin + Math.random() * (layer.yMax - layer.yMin))
+  const margin = 80 * layer.scale
+  const x = opts?.onScreen
+    ? w * (0.15 + Math.random() * 0.7)
+    : facing === 1
+      ? -margin
+      : w + margin
+  return {
+    ...baseChicken(),
+    x,
+    y,
+    baseY: y,
+    vx: facing * speed,
+    facing,
+    layer,
+    state: 'flying',
+    palette,
+    sprite,
+    domain: 'air',
+    points: layer.points,
+  }
+}
+
+/** Hen / rooster walking along the meadow floor. */
+export function spawnGroundChicken(w: number, h: number, opts?: SpawnOpts): Chicken {
+  const row = GROUND_ROWS[Math.floor(Math.random() * GROUND_ROWS.length)]!
+  const rowIdx = GROUND_ROWS.indexOf(row)
+  let sprite: SpriteKey
+  let kind: keyof typeof GROUND_POINTS
+  if (wantsGold(opts)) {
+    sprite = 'hen-golden'
+    kind = 'hen'
+  } else {
+    const r = Math.random()
+    if (r < 0.08) {
+      sprite = 'rooster-crossbow'
+      kind = 'crossbow'
+    } else if (r < 0.54) {
+      sprite = 'rooster-white'
+      kind = 'rooster'
+    } else {
+      sprite = 'hen-speckled'
+      kind = 'hen'
+    }
+  }
+  const palette: ChickenPalette =
+    sprite === 'hen-golden' ? 'gold' : sprite === 'hen-speckled' ? 'speckle' : sprite === 'rooster-white' ? 'white' : 'brown'
+  const facing: 1 | -1 = Math.random() < 0.5 ? 1 : -1
+  const speed = row.speed * (0.8 + Math.random() * 0.4)
+  const feetY = h * row.yMin + (Math.random() - 0.5) * h * 0.012
+  const margin = 70 * row.scale
+  const x = opts?.onScreen
+    ? w * (0.12 + Math.random() * 0.76)
+    : facing === 1
+      ? -margin
+      : w + margin
+  return {
+    ...baseChicken(),
+    x,
+    y: feetY,
+    baseY: feetY,
+    vx: facing * speed,
+    facing,
+    layer: row,
+    state: 'walking',
+    palette,
+    sprite,
+    domain: 'ground',
+    points: GROUND_POINTS[kind][rowIdx]!,
+    nextPauseT: 1 + Math.random() * 3,
+  }
+}
+
+/** Generic spawn (menu / tests): ~35% ground, 65% air. */
+export function spawnChicken(w: number, h: number, opts?: SpawnOpts): Chicken {
+  return Math.random() < GROUND_SHARE
+    ? spawnGroundChicken(w, h, opts)
+    : spawnAirChicken(w, h, opts)
+}
+
+/** True while the chicken can still be shot. */
+export function isTargetable(c: Chicken): boolean {
+  return c.state === 'flying' || c.state === 'walking' || c.state === 'pecking'
+}
+
+export function updateChicken(c: Chicken, dt: number, w: number, h: number): void {
   if (c.state === 'flying') {
     c.x += c.vx * dt
     c.flap += dt * 12
     c.wobble += dt * 3
     c.y += Math.sin(c.wobble) * 18 * dt
+  } else if (c.state === 'walking') {
+    c.x += c.vx * dt
+    // steps get quicker with the walking speed
+    c.walkPhase += dt * (6 + Math.abs(c.vx) * 0.09)
+    c.nextPauseT -= dt
+    if (c.nextPauseT <= 0) {
+      c.state = 'pecking'
+      c.pauseT = 0.8 + Math.random() * 1.0
+    }
+  } else if (c.state === 'pecking') {
+    c.pauseT -= dt
+    c.walkPhase += dt * 11
+    if (c.pauseT <= 0) {
+      c.state = 'walking'
+      c.nextPauseT = 1.5 + Math.random() * 3.5
+      // sometimes turn around (only well inside the screen so nobody gets stuck off-screen)
+      if (Math.random() < 0.3 && c.x > w * 0.2 && c.x < w * 0.8) {
+        c.facing = (c.facing * -1) as 1 | -1
+        c.vx = -c.vx
+      }
+    }
   } else if (c.state === 'hit') {
     c.hitT += dt
     if (c.hitT > 0.25) {
       c.state = 'falling'
-      c.fallVy = 40
+      c.fallVy = c.domain === 'ground' ? -260 : 40 // ground: little hop up, then tumble
     }
   } else if (c.state === 'falling') {
-    c.fallVy += 520 * dt
-    c.y += c.fallVy * dt
-    c.x += c.facing * 20 * dt
-    if (c.y > h * 0.72 || c.hitT > 1.4) {
-      c.state = 'poof'
-      c.poofT = 0
-    }
     c.hitT += dt
+    if (c.domain === 'ground') {
+      c.fallVy += 1100 * dt
+      c.y += c.fallVy * dt
+      c.x += c.facing * 25 * dt
+      if (c.fallVy > 0 && c.y >= c.baseY) {
+        c.y = c.baseY
+        c.state = 'poof'
+        c.poofT = 0
+      }
+    } else {
+      c.fallVy += 520 * dt
+      c.y += c.fallVy * dt
+      c.x += c.facing * 20 * dt
+      if (c.y > h * 0.72 || c.hitT > 1.4) {
+        c.state = 'poof'
+        c.poofT = 0
+      }
+    }
   } else if (c.state === 'poof') {
     c.poofT += dt
     if (c.poofT > 0.35) c.state = 'gone'
   }
 }
 
+/** Drawn size of the chicken sprite in canvas px. */
+function spriteSize(c: Chicken, canvasH: number): { w: number; h: number } {
+  const info = SPRITES[c.sprite]
+  const s = c.layer.scale
+  if (c.domain === 'air') {
+    let dw = 120 * s
+    let dh = dw / info.aspect
+    const maxH = 100 * s
+    if (dh > maxH) {
+      dh = maxH
+      dw = dh * info.aspect
+    }
+    return { w: dw, h: dh }
+  }
+  const unit = Math.min(150, Math.max(96, canvasH * 0.24))
+  const dh = unit * s * info.hFactor
+  return { w: dh * info.aspect, h: dh }
+}
+
+let lastCanvasH = 600
+
+/** Body centre (used for hit testing, floaters and the poof). */
+export function chickenCenter(c: Chicken): { x: number; y: number } {
+  if (c.domain === 'ground') return { x: c.x, y: c.y - spriteSize(c, lastCanvasH).h * 0.5 }
+  return { x: c.x, y: c.y }
+}
+
 export function chickenHitRadius(c: Chicken): number {
-  return 28 * c.layer.scale
+  const { w, h } = spriteSize(c, lastCanvasH)
+  return Math.max(18, Math.sqrt(w * h) * 0.42)
 }
 
 export function isGoldChicken(c: Chicken): boolean {
   return c.palette === 'gold'
 }
 
-export function drawChicken(ctx: CanvasRenderingContext2D, c: Chicken): void {
+export function drawChicken(ctx: CanvasRenderingContext2D, c: Chicken, canvasH: number): void {
   if (c.state === 'gone') return
-  const s = c.layer.scale
-  ctx.save()
-  ctx.translate(c.x, c.y)
-  ctx.scale(c.facing, 1)
+  lastCanvasH = canvasH
+  const { w: dw, h: dh } = spriteSize(c, canvasH)
+  const ground = c.domain === 'ground'
+  const gold = c.palette === 'gold'
+  const s = dh / 69 // "legacy" scale used by the procedural fallback / effects
+  const center = chickenCenter(c)
 
   if (c.state === 'poof') {
-    drawPoof(ctx, c.poofT, s, c.palette === 'gold')
+    ctx.save()
+    ctx.translate(center.x, center.y)
+    drawPoof(ctx, c.poofT, s, gold)
     ctx.restore()
     return
   }
 
-  const bodyR = 22 * s
-  const wingPhase = c.state === 'flying' ? Math.sin(c.flap) : 0.3
-
-  // Soft ground shadow
-  if (c.state === 'flying') {
-    ctx.fillStyle = 'rgba(0,0,0,0.14)'
+  // Soft shadow on the grass (ground chickens stay tied to the floor, also when tumbling)
+  if (ground) {
+    const lift = Math.max(0, c.baseY - c.y)
+    ctx.fillStyle = `rgba(0,0,0,${Math.max(0.06, 0.24 - lift * 0.002)})`
     ctx.beginPath()
-    ctx.ellipse(0, bodyR + 16 * s, bodyR * 0.95, 5.5 * s, 0, 0, Math.PI * 2)
+    ctx.ellipse(c.x, c.baseY, dw * 0.4, Math.max(3, dh * 0.055), 0, 0, Math.PI * 2)
     ctx.fill()
   }
 
+  const flying = c.state === 'flying'
+  const walking = c.state === 'walking' || c.state === 'pecking'
+  const tumbling = c.state === 'hit' || c.state === 'falling'
+  const sprite = getSprite(c.sprite)
+  const info = SPRITES[c.sprite]
+  const flipX = c.facing * info.native
+
   // Gold glow
-  if (c.palette === 'gold' && c.state === 'flying') {
-    const g = ctx.createRadialGradient(0, 0, bodyR * 0.3, 0, 0, bodyR * 2.2)
+  if (gold && (flying || walking)) {
+    const r = Math.max(dw, dh) * 0.75
+    const g = ctx.createRadialGradient(center.x, center.y, r * 0.15, center.x, center.y, r)
     g.addColorStop(0, 'rgba(255,220,80,0.35)')
     g.addColorStop(1, 'rgba(255,200,40,0)')
     ctx.fillStyle = g
     ctx.beginPath()
-    ctx.arc(0, 0, bodyR * 2.2, 0, Math.PI * 2)
+    ctx.arc(center.x, center.y, r, 0, Math.PI * 2)
     ctx.fill()
   }
 
-  const sprite = getSprite(c.palette)
-  if (sprite) {
-    drawChickenSprite(ctx, c, sprite, s, bodyR, wingPhase)
+  ctx.save()
+  if (walking) {
+    // waddle: small hop + tilt around the feet, peck = nod forward
+    const hop = Math.abs(Math.sin(c.walkPhase)) * dh * 0.035
+    let tilt = Math.sin(c.walkPhase) * 0.06
+    if (c.state === 'pecking') {
+      const nod = 0.5 + 0.5 * Math.sin(c.walkPhase)
+      tilt = nod * 0.32
+    }
+    ctx.translate(c.x, c.y - (c.state === 'pecking' ? 0 : hop))
+    ctx.rotate(tilt * c.facing)
+    ctx.scale(flipX, 1)
+    if (sprite) ctx.drawImage(sprite, -dw / 2, -dh, dw, dh)
+    else {
+      ctx.translate(0, -dh * 0.5)
+      ctx.scale(c.facing / flipX, 1)
+      drawChickenProcedural(ctx, c, s, 22 * s, 0.3)
+    }
   } else {
-    drawChickenProcedural(ctx, c, s, bodyR, wingPhase)
+    // air (flapping) or tumbling (hit / falling) — pivot around the body centre
+    const phase = Math.sin(c.flap)
+    const bob = flying ? Math.sin(c.flap * 0.5) * 3 * c.layer.scale : 0
+    const flapRot = flying ? phase * 0.09 : 0
+    const flapScaleY = flying ? 1 + phase * 0.07 : 1
+    let rot = 0
+    if (c.state === 'hit') rot = Math.sin(c.hitT * 60) * 0.12
+    else if (c.state === 'falling') rot = c.hitT * (ground ? 5 : 2.2) * c.facing
+    ctx.translate(center.x, center.y + bob)
+    ctx.rotate(flapRot * c.facing + rot)
+    ctx.scale(flipX, flapScaleY)
+    if (sprite) ctx.drawImage(sprite, -dw / 2, -dh / 2, dw, dh)
+    else {
+      ctx.scale(c.facing / flipX, 1)
+      drawChickenProcedural(ctx, c, s, 22 * s, phase)
+    }
+  }
+  ctx.restore()
+
+  if (tumbling) {
+    // dizzy stars around the head
+    ctx.fillStyle = '#ffe066'
+    const t = c.hitT * 9
+    for (let i = 0; i < 3; i++) {
+      const a = t + (i * Math.PI * 2) / 3
+      drawSpark(ctx, center.x + Math.cos(a) * dw * 0.4, center.y - dh * 0.38 + Math.sin(a) * dh * 0.08, 4 * s + 2)
+    }
   }
 
-  // Tiny crown sparkles for gold
-  if (c.palette === 'gold' && c.state === 'flying') {
-    const sparkle = (Math.sin(c.flap * 0.7) + 1) * 0.5
+  if (gold && (flying || walking)) {
+    const sparkle = (Math.sin(c.flap * 0.7 + c.walkPhase * 0.7) + 1) * 0.5
     ctx.fillStyle = `rgba(255,255,200,${0.5 + sparkle * 0.5})`
     for (const [dx, dy] of [
-      [-bodyR * 0.2, -bodyR * 1.35],
-      [bodyR * 0.9, -bodyR * 1.1],
-      [bodyR * 0.1, -bodyR * 0.2],
+      [-0.3, -0.42],
+      [0.32, -0.3],
+      [0.05, 0.05],
     ] as const) {
-      drawSpark(ctx, dx, dy, 3.5 * s * (0.7 + sparkle * 0.4))
+      drawSpark(ctx, center.x + dx * dw, center.y + dy * dh, 3.5 * s * (0.7 + sparkle * 0.4) + 1)
     }
   }
-
-  ctx.restore()
-}
-
-function drawChickenSprite(
-  ctx: CanvasRenderingContext2D,
-  c: Chicken,
-  img: HTMLImageElement,
-  s: number,
-  bodyR: number,
-  wingPhase: number,
-): void {
-  const targetH = bodyR * 3.15
-  const aspect = img.naturalWidth / img.naturalHeight
-  const drawH = targetH
-  const drawW = drawH * aspect
-
-  const bob = c.state === 'flying' ? Math.sin(c.flap * 0.5) * 2.5 * s : 0
-  const flapRot = c.state === 'flying' ? wingPhase * 0.08 : 0
-  const flapScaleY = c.state === 'flying' ? 1 + wingPhase * 0.04 : 1
-  const fallRot = c.state === 'falling' || c.state === 'hit' ? c.hitT * 2.2 : 0
-
-  ctx.save()
-  ctx.translate(0, bob)
-  ctx.rotate(flapRot + fallRot * c.facing)
-  ctx.scale(1, flapScaleY)
-
-  // Anchor roughly at body center of the standing sprite
-  ctx.drawImage(img, -drawW * 0.48, -drawH * 0.58, drawW, drawH)
-
-  if (c.state === 'hit' || c.state === 'falling') {
-    // X eyes overlay
-    const ex = drawW * 0.12
-    const ey = -drawH * 0.22
-    ctx.strokeStyle = '#222'
-    ctx.lineWidth = 2.5 * s
-    ctx.lineCap = 'round'
-    for (const ox of [-6 * s, 7 * s]) {
-      ctx.beginPath()
-      ctx.moveTo(ex + ox - 4 * s, ey - 4 * s)
-      ctx.lineTo(ex + ox + 4 * s, ey + 4 * s)
-      ctx.moveTo(ex + ox + 4 * s, ey - 4 * s)
-      ctx.lineTo(ex + ox - 4 * s, ey + 4 * s)
-      ctx.stroke()
-    }
-  }
-  ctx.restore()
 }
 
 function drawChickenProcedural(

@@ -1,4 +1,16 @@
-export type ChickenState = 'flying' | 'hit' | 'falling' | 'poof' | 'gone'
+/** flying = airborne; walking/pecking = on the ground; hit/falling/poof/gone = shared end states */
+export type ChickenState = 'flying' | 'walking' | 'pecking' | 'hit' | 'falling' | 'poof' | 'gone'
+
+export type ChickenDomain = 'air' | 'ground'
+
+export type SpriteKey =
+  | 'fly-white'
+  | 'fly-speckled'
+  | 'fly-golden'
+  | 'hen-speckled'
+  | 'hen-golden'
+  | 'rooster-white'
+  | 'rooster-crossbow'
 
 export type ChickenPalette = 'brown' | 'ginger' | 'white' | 'speckle' | 'gold'
 
@@ -26,6 +38,16 @@ export interface Chicken {
   poofT: number
   wobble: number
   palette: ChickenPalette
+  domain: ChickenDomain
+  /** Base points for a hit (before gold bonus / streak) */
+  points: number
+  sprite: SpriteKey
+  /** Ground only: walk cycle phase, peck timer, time until next pause, feet y at rest */
+  walkPhase: number
+  pauseT: number
+  nextPauseT: number
+  baseY: number
+  turned: boolean
 }
 
 export interface Floater {
