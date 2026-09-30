@@ -59,7 +59,7 @@ export interface Floater {
   color?: string
 }
 
-export type GamePhase = 'menu' | 'playing' | 'over'
+export type GamePhase = 'menu' | 'ready' | 'countdown' | 'playing' | 'over'
 
 export type ChallengeId =
   | 'klasika'

@@ -33,6 +33,9 @@ const STREAK_BONUS = 50
 const GOLD_BONUS = 30
 const MENU_MSG = 'Pick a game and start hunting!'
 const VIEW_OUT_MS = 150
+const COUNT_STEP_S = 0.8 // seconds per number in the 3-2-1 countdown
+const COUNT_FROM = 3
+const GO_SHOW_S = 0.75 // how long "GO!" stays on screen (the round is already running)
 
 export class Game {
   private canvas: HTMLCanvasElement
@@ -57,6 +60,10 @@ export class Game {
   private w = 0
   private h = 0
   private elapsed = 0
+  private roundElapsed = 0 // seconds of actual play (drives spawn pacing)
+  private cdT = 0 // seconds since the countdown started
+  private cdStep = -1
+  private goLeft = 0
 
   private challenge: ChallengeDef = CHALLENGES[0]!
   private caught = 0
@@ -85,6 +92,15 @@ export class Game {
   private elPauseInfo: HTMLElement
   private elResume: HTMLButtonElement
   private elMute: HTMLButtonElement
+  private elReady: HTMLElement
+  private elReadyCard: HTMLElement
+  private elReadyIcon: HTMLElement
+  private elReadyTitle: HTMLElement
+  private elReadyGoal: HTMLElement
+  private elStart: HTMLButtonElement
+  private elReadyBack: HTMLButtonElement
+  private elCountdown: HTMLElement
+  private elAgain: HTMLButtonElement
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
@@ -111,6 +127,15 @@ export class Game {
     this.elPauseInfo = must('#pause-info')
     this.elResume = must('#resume-btn') as HTMLButtonElement
     this.elMute = must('#mute-btn') as HTMLButtonElement
+    this.elReady = must('#ready')
+    this.elReadyCard = must('#ready-card')
+    this.elReadyIcon = must('#ready-icon')
+    this.elReadyTitle = must('#ready-title')
+    this.elReadyGoal = must('#ready-goal')
+    this.elStart = must('#start-btn') as HTMLButtonElement
+    this.elReadyBack = must('#ready-back') as HTMLButtonElement
+    this.elCountdown = must('#countdown')
+    this.elAgain = must('#again-btn') as HTMLButtonElement
 
     this.highScore =
       Number(
@@ -156,7 +181,7 @@ export class Game {
     // Generic UI tap sound for buttons that have no sound of their own
     this.elApp.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest('button')
-      if (!b || b.id === 'mute-btn' || b.id === 'reload-btn' || b.id === 'pause-btn' || b.id === 'resume-btn') return
+      if (!b || b.id === 'mute-btn' || b.id === 'reload-btn' || b.id === 'pause-btn' || b.id === 'resume-btn' || b.id === 'start-btn') return
       sfx.tap()
     })
     this.elMute.addEventListener('click', () => {
@@ -168,6 +193,10 @@ export class Game {
     this.elBack.addEventListener('click', () => this.setMenuStep('modes'))
     this.elReload.addEventListener('click', () => this.reload())
 
+    this.elStart.addEventListener('click', () => this.beginCountdown())
+    this.elReadyBack.addEventListener('click', () => this.quitToMenu())
+    this.elAgain.addEventListener('click', () => this.playAgain())
+
     this.elPauseBtn.addEventListener('click', () => this.pause())
     this.elResume.addEventListener('click', () => this.resume())
     must('#restart-btn').addEventListener('click', () => this.restart())
@@ -175,12 +204,16 @@ export class Game {
 
     // Auto-pause when the tab/app goes to the background
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) this.pause()
+      if (document.hidden) this.onHidden()
     })
-    window.addEventListener('pagehide', () => this.pause())
+    window.addEventListener('pagehide', () => this.onHidden())
 
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
+        if (this.phase === 'countdown') {
+          this.cancelCountdown()
+          return
+        }
         if (this.paused) this.resume()
         else this.pause()
       }
@@ -320,7 +353,20 @@ export class Game {
 
   private pickChallenge(id: ChallengeId): void {
     this.challenge = getChallenge(id)
-    this.startRound()
+    this.prepareRound()
+  }
+
+  /** 'Play again' on the result screen: same mode, straight into the countdown. */
+  private playAgain(): void {
+    if (this.phase !== 'over') return
+    this.prepareRound()
+    this.beginCountdown()
+  }
+
+  /** Tab/app went to the background: pause a running round, or cancel a countdown back to ready. */
+  private onHidden(): void {
+    if (this.phase === 'countdown') this.cancelCountdown()
+    else this.pause()
   }
 
   private resize(): void {
@@ -349,6 +395,9 @@ export class Game {
     this.renderChallengeList()
     this.setMenuStep('modes', false)
     this.setPlayingUi(false)
+    this.setPreUi(null)
+    this.hideCountdown()
+    this.elAgain.hidden = !isResult
     this.setOverlay(this.elPauseOverlay, false)
     this.setOverlay(this.elOverlay, true)
   }
@@ -366,9 +415,69 @@ export class Game {
     this.elChallengeProgress.classList.toggle('hidden', !on)
   }
 
+  /** Ready / countdown UI: #ready container, Start card, and the dimmed pause + hidden reload buttons. */
+  private setPreUi(state: 'ready' | 'countdown' | null): void {
+    const on = state != null
+    this.elApp.classList.toggle('pre', on)
+    this.elPauseBtn.disabled = on
+    this.elReload.disabled = on
+    this.setOverlay(this.elReady, on)
+    const showCard = state === 'ready'
+    this.elReadyCard.classList.toggle('off', !showCard)
+    this.elReadyCard.toggleAttribute('inert', !showCard)
+  }
+
+  private showCountdownText(text: string, go = false): void {
+    const el = this.elCountdown
+    el.textContent = text
+    el.classList.toggle('go', go)
+    el.classList.remove('off', 'cd-anim')
+    void el.offsetWidth // restart the CSS animation
+    el.classList.add('cd-anim')
+  }
+
+  private hideCountdown(): void {
+    this.goLeft = 0
+    this.elCountdown.classList.add('off')
+    this.elCountdown.classList.remove('cd-anim')
+  }
+
+  /** Start pressed: 3 - 2 - 1, then the round begins. */
+  private beginCountdown(): void {
+    if (this.phase !== 'ready') return
+    this.phase = 'countdown'
+    this.cdT = 0
+    this.cdStep = 0
+    this.setPreUi('countdown')
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    this.showCountdownText(String(COUNT_FROM))
+    sfx.tick()
+  }
+
+  /** Countdown interrupted (tab hidden / Esc): back to the ready screen, nothing started. */
+  private cancelCountdown(): void {
+    if (this.phase !== 'countdown') return
+    this.phase = 'ready'
+    this.cdStep = -1
+    this.hideCountdown()
+    this.setPreUi('ready')
+  }
+
+  /** Countdown finished: timer, spawns and shooting go live. The ready-state chickens stay on screen. */
+  private beginPlay(): void {
+    this.phase = 'playing'
+    this.roundElapsed = 0
+    this.spawnAcc = 0
+    this.setPreUi(null)
+    this.showCountdownText('GO!', true)
+    this.goLeft = GO_SHOW_S
+    sfx.go()
+  }
+
   private pause(): void {
     if (this.phase !== 'playing' || this.paused) return
     this.paused = true
+    this.hideCountdown()
     if (!document.hidden) sfx.pause()
     const t = Math.max(0, Math.ceil(this.timeLeft))
     const mm = String(Math.floor(t / 60)).padStart(2, '0')
@@ -391,19 +500,21 @@ export class Game {
     if (!this.paused) return
     this.setOverlay(this.elPauseOverlay, false)
     ;(document.activeElement as HTMLElement | null)?.blur()
-    this.startRound()
+    this.prepareRound()
+    this.beginCountdown() // quick: skip the Start button
   }
 
   /** Leave the round without a result: no win, no stars, no high score. */
   private quitToMenu(): void {
-    if (this.phase !== 'playing') return
+    if (this.phase !== 'playing' && this.phase !== 'ready' && this.phase !== 'countdown') return
     this.clearAutoReload()
     this.hideToast()
     this.showMenu(MENU_MSG)
     ;(document.activeElement as HTMLElement | null)?.blur()
   }
 
-  private startRound(): void {
+  /** Enter the ready state: fresh round values, idle chickens, HUD at full, Start button waiting. */
+  private prepareRound(): void {
     this.chickens = []
     this.floaters = []
     this.particles.clear()
@@ -415,15 +526,22 @@ export class Game {
     this.timeLeft = this.challenge.duration
     this.ammo = MAX_AMMO
     this.spawnAcc = 0
-    this.elapsed = 0
+    this.roundElapsed = 0
     this.flash = 0
+    this.cdT = 0
+    this.cdStep = -1
     this.clearAutoReload()
     this.hideToast()
-    this.phase = 'playing'
+    this.hideCountdown()
+    this.phase = 'ready'
     this.paused = false
+    this.elReadyIcon.textContent = this.challenge.icon
+    this.elReadyTitle.textContent = this.challenge.title
+    this.elReadyGoal.textContent = this.challenge.desc
     this.setOverlay(this.elOverlay, false)
     this.setOverlay(this.elPauseOverlay, false)
     this.setPlayingUi(true)
+    this.setPreUi('ready')
     this.updateHud()
     this.renderAmmo()
     const opts = {
@@ -726,7 +844,24 @@ export class Game {
     if (this.shake > 0) this.shake = Math.max(0, this.shake - dt)
     this.particles.update(dt)
 
+    if (this.phase === 'countdown') {
+      this.cdT += dt
+      const step = Math.floor(this.cdT / COUNT_STEP_S)
+      if (step >= COUNT_FROM) {
+        this.beginPlay()
+      } else if (step !== this.cdStep) {
+        this.cdStep = step
+        this.showCountdownText(String(COUNT_FROM - step))
+        sfx.tick()
+      }
+    }
+    if (this.goLeft > 0) {
+      this.goLeft -= dt
+      if (this.goLeft <= 0) this.hideCountdown()
+    }
+
     if (this.phase === 'playing') {
+      this.roundElapsed += dt
       if (this.autoReloadLeft != null) {
         this.autoReloadLeft -= dt * 1000
         if (this.autoReloadLeft <= 0) {
@@ -744,7 +879,7 @@ export class Game {
       }
 
       this.spawnAcc += dt
-      const interval = Math.max(0.4, 1.05 - this.elapsed * 0.008)
+      const interval = Math.max(0.4, 1.05 - this.roundElapsed * 0.008)
       while (this.spawnAcc >= interval) {
         this.spawnAcc -= interval
         this.spawnOne({
@@ -752,7 +887,7 @@ export class Game {
           forceGoldLayer: !!this.challenge.goldOnly && Math.random() < 0.55,
         })
       }
-    } else if (this.phase === 'menu' || this.phase === 'over') {
+    } else {
       this.spawnAcc += dt
       if (this.spawnAcc > 1.2) {
         this.spawnAcc = 0
@@ -845,7 +980,7 @@ export class Game {
       ctx.fill()
     }
 
-    if (this.phase === 'playing' || this.pointer.active) {
+    if (this.phase === 'playing' || (this.pointer.active && this.phase !== 'ready' && this.phase !== 'countdown')) {
       drawCrosshair(ctx, this.pointer.x, this.pointer.y, this.ammo > 0)
     }
   }

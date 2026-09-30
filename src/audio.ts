@@ -325,6 +325,25 @@ class Sfx {
     this.tone(c, c.currentTime, { type: 'square', f0: 440, f1: 720, dur: 0.07, vol: 0.1 })
   }
 
+  /** Countdown number: short soft blip. */
+  tick(): void {
+    const c = this.ready()
+    if (!c) return
+    const t = c.currentTime
+    this.tone(c, t, { type: 'triangle', f0: 523, dur: 0.16, vol: 0.28 })
+    this.tone(c, t, { type: 'sine', f0: 1046, dur: 0.1, vol: 0.06 })
+  }
+
+  /** Countdown GO: higher, brighter two-note chirp. */
+  go(): void {
+    const c = this.ready()
+    if (!c) return
+    const t = c.currentTime
+    this.tone(c, t, { type: 'triangle', f0: 784, dur: 0.14, vol: 0.3 })
+    this.tone(c, t + 0.09, { type: 'triangle', f0: 1175, dur: 0.34, vol: 0.32 })
+    this.tone(c, t + 0.09, { type: 'sine', f0: 2350, dur: 0.2, vol: 0.05 })
+  }
+
   /** Generic UI button tap. */
   tap(): void {
     const c = this.ready()
